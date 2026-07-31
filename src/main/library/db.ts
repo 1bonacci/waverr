@@ -134,6 +134,28 @@ const MIGRATIONS: readonly string[] = [
     VALUES (new.id, new.filename, new.path, new.title, new.artist, new.album);
   END;
   `
+  ,
+  // v2 - playlists
+  `
+  CREATE TABLE playlists (
+    id         INTEGER PRIMARY KEY,
+    name       TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE playlist_items (
+    id          INTEGER PRIMARY KEY,
+    playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+    track_id    INTEGER NOT NULL REFERENCES tracks(id)    ON DELETE CASCADE,
+    -- La posicion NO es parte de la primary key: si lo fuera, mover un item
+    -- exigiria posiciones temporales para no violar la restriccion a mitad de
+    -- camino. Reordenar es reescribir las posiciones en una transaccion.
+    position    INTEGER NOT NULL
+  );
+
+  CREATE INDEX playlist_items_order ON playlist_items(playlist_id, position);
+  `
 ]
 
 /**

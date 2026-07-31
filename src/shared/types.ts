@@ -20,6 +20,18 @@ export const IPC = {
   libraryStats: 'library:stats',
   libraryToggleFavorite: 'library:toggleFavorite',
 
+  libraryListPlaylists: 'library:listPlaylists',
+  libraryCreatePlaylist: 'library:createPlaylist',
+  libraryRenamePlaylist: 'library:renamePlaylist',
+  libraryDeletePlaylist: 'library:deletePlaylist',
+  libraryAddToPlaylist: 'library:addToPlaylist',
+  libraryRemoveFromPlaylist: 'library:removeFromPlaylist',
+  libraryListPlaylistTracks: 'library:listPlaylistTracks',
+  libraryMovePlaylistItem: 'library:movePlaylistItem',
+  libraryCreatePlaylistFromTracks: 'library:createPlaylistFromTracks',
+  libraryGetSetting: 'library:getSetting',
+  librarySetSetting: 'library:setSetting',
+
   /** main -> renderer, progreso de escaneo */
   libraryScanProgress: 'library:scanProgress'
 } as const
@@ -76,6 +88,21 @@ export interface FolderEntry {
   /** Nombre para mostrar en la pantalla. */
   name: string
   trackCount: number
+}
+
+export interface Playlist {
+  id: number
+  name: string
+  trackCount: number
+  createdAt: number
+  updatedAt: number
+}
+
+/** Una pista dentro de una playlist. `itemId` la identifica como fila de la
+ *  playlist, porque la misma pista puede estar dos veces. */
+export interface PlaylistEntry extends Track {
+  itemId: number
+  position: number
 }
 
 export interface LibraryStats {
@@ -136,6 +163,17 @@ export interface WaverrApi {
     stats(): Promise<LibraryStats>
     /** Devuelve el estado resultante: true si quedo marcada como favorita. */
     toggleFavorite(trackId: number): Promise<boolean>
+    listPlaylists(): Promise<Playlist[]>
+    createPlaylist(name: string): Promise<Playlist | null>
+    renamePlaylist(playlistId: number, name: string): Promise<boolean>
+    deletePlaylist(playlistId: number): Promise<void>
+    addToPlaylist(playlistId: number, trackId: number): Promise<void>
+    removeFromPlaylist(itemId: number): Promise<void>
+    listPlaylistTracks(playlistId: number): Promise<PlaylistEntry[]>
+    movePlaylistItem(playlistId: number, from: number, to: number): Promise<void>
+    createPlaylistFromTracks(name: string, trackIds: number[]): Promise<Playlist | null>
+    getSetting(key: string): Promise<string | null>
+    setSetting(key: string, value: string): Promise<void>
     onScanProgress(listener: (progress: ScanProgress) => void): () => void
   }
 }

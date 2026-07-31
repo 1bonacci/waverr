@@ -29,6 +29,25 @@ const api: WaverrApi = {
     stats: () => ipcRenderer.invoke(IPC.libraryStats),
     toggleFavorite: (trackId: number) =>
       ipcRenderer.invoke(IPC.libraryToggleFavorite, trackId) as Promise<boolean>,
+    listPlaylists: () => ipcRenderer.invoke(IPC.libraryListPlaylists),
+    createPlaylist: (name: string) => ipcRenderer.invoke(IPC.libraryCreatePlaylist, name),
+    renamePlaylist: (playlistId: number, name: string) =>
+      ipcRenderer.invoke(IPC.libraryRenamePlaylist, playlistId, name),
+    deletePlaylist: (playlistId: number) =>
+      ipcRenderer.invoke(IPC.libraryDeletePlaylist, playlistId),
+    addToPlaylist: (playlistId: number, trackId: number) =>
+      ipcRenderer.invoke(IPC.libraryAddToPlaylist, playlistId, trackId),
+    removeFromPlaylist: (itemId: number) =>
+      ipcRenderer.invoke(IPC.libraryRemoveFromPlaylist, itemId),
+    listPlaylistTracks: (playlistId: number) =>
+      ipcRenderer.invoke(IPC.libraryListPlaylistTracks, playlistId),
+    movePlaylistItem: (playlistId: number, from: number, to: number) =>
+      ipcRenderer.invoke(IPC.libraryMovePlaylistItem, playlistId, from, to),
+    createPlaylistFromTracks: (name: string, trackIds: number[]) =>
+      ipcRenderer.invoke(IPC.libraryCreatePlaylistFromTracks, name, trackIds),
+    getSetting: (key: string) => ipcRenderer.invoke(IPC.libraryGetSetting, key),
+    setSetting: (key: string, value: string) =>
+      ipcRenderer.invoke(IPC.librarySetSetting, key, value),
     onScanProgress: (listener: (progress: ScanProgress) => void) => {
       const handler = (_event: unknown, progress: ScanProgress): void => listener(progress)
       ipcRenderer.on(IPC.libraryScanProgress, handler)

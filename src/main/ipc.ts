@@ -62,6 +62,32 @@ export function registerLibraryIpc(library: Library, getWindow: () => BrowserWin
   ipcMain.handle(IPC.libraryToggleFavorite, (_event, trackId: number) =>
     library.toggleFavorite(trackId)
   )
+
+  ipcMain.handle(IPC.libraryListPlaylists, () => library.listPlaylists())
+  ipcMain.handle(IPC.libraryCreatePlaylist, (_event, name: string) => library.createPlaylist(name))
+  ipcMain.handle(IPC.libraryRenamePlaylist, (_event, id: number, name: string) =>
+    library.renamePlaylist(id, name)
+  )
+  ipcMain.handle(IPC.libraryDeletePlaylist, (_event, id: number) => library.deletePlaylist(id))
+  ipcMain.handle(IPC.libraryAddToPlaylist, (_event, playlistId: number, trackId: number) =>
+    library.addToPlaylist(playlistId, trackId)
+  )
+  ipcMain.handle(IPC.libraryRemoveFromPlaylist, (_event, itemId: number) =>
+    library.removeFromPlaylist(itemId)
+  )
+  ipcMain.handle(IPC.libraryListPlaylistTracks, (_event, playlistId: number) =>
+    library.listPlaylistTracks(playlistId)
+  )
+  ipcMain.handle(IPC.libraryMovePlaylistItem, (_event, playlistId: number, from: number, to: number) =>
+    library.movePlaylistItem(playlistId, from, to)
+  )
+  ipcMain.handle(IPC.libraryCreatePlaylistFromTracks, (_event, name: string, trackIds: number[]) =>
+    library.createPlaylistFromTracks(name, trackIds)
+  )
+  ipcMain.handle(IPC.libraryGetSetting, (_event, key: string) => library.getSetting(key))
+  ipcMain.handle(IPC.librarySetSetting, (_event, key: string, value: string) =>
+    library.setSetting(key, value)
+  )
 }
 
 /**
