@@ -12,3 +12,6 @@ playwright-report/
 
 # artefactos de compilacion incremental de typescript
 *.tsbuildinfo
+
+# scratch de subagent-driven-development
+.superpowers/
