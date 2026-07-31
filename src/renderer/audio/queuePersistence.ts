@@ -55,44 +55,58 @@ export class QueuePersistence {
 
   async restore(): Promise<QueuePersistenceState | null> {
     if (this.restored) return null
-    this.restored = true
 
-    const raw = await this.callbacks.getSetting(this.key)
-    if (!raw) return null
-
-    let parsed: { manualTrackIds?: unknown; currentTrackId?: unknown }
-    try {
-      parsed = JSON.parse(raw) as typeof parsed
-    } catch {
-      return null
-    }
-
-    const ids = Array.isArray(parsed.manualTrackIds)
-      ? parsed.manualTrackIds.filter((id): id is number => typeof id === 'number')
-      : []
-
+    // Capturar el contador COMO PRIMERA COSA, antes de cualquier await.
+    // Asi detecta mutaciones incluso durante getSetting.
     const mutationCountAtStart = this.mutationCount
 
-    // Paralelo: reduce la ventana donde puede ocurrir una mutacion.
-    const fetchedTracks = await Promise.all(
-      ids.map((id) => this.callbacks.getTrack(id))
-    )
+    try {
+      this.restored = true
 
-    const tracks: Track[] = []
-    for (const track of fetchedTracks) {
-      if (track && !track.missing) tracks.push(track)
-    }
+      const raw = await this.callbacks.getSetting(this.key)
+      if (!raw) return null
 
-    // Si la cola fue mutada mientras restaurabamos, el usuario gano: descartar.
-    if (this.mutationCount !== mutationCountAtStart) {
-      return null
-    }
+      let parsed: { manualTrackIds?: unknown; currentTrackId?: unknown }
+      try {
+        parsed = JSON.parse(raw) as typeof parsed
+      } catch {
+        return null
+      }
 
-    return {
-      manualTracks: tracks,
-      currentTrackId: parsed.currentTrackId && typeof parsed.currentTrackId === 'number'
+      const ids = Array.isArray(parsed.manualTrackIds)
+        ? parsed.manualTrackIds.filter((id): id is number => typeof id === 'number')
+        : []
+
+      // Paralelo: reduce la ventana donde puede ocurrir una mutacion.
+      const fetchedTracks = await Promise.all(
+        ids.map((id) => this.callbacks.getTrack(id))
+      )
+
+      const tracks: Track[] = []
+      for (const track of fetchedTracks) {
+        if (track && !track.missing) tracks.push(track)
+      }
+
+      // Si la cola fue mutada mientras restaurabamos, el usuario gano: descartar.
+      if (this.mutationCount !== mutationCountAtStart) {
+        return null
+      }
+
+      // Chequear el tipo primero para evitar tratar 0 como falsy.
+      const currentTrackId = typeof parsed.currentTrackId === 'number'
         ? parsed.currentTrackId
         : null
+
+      return {
+        manualTracks: tracks,
+        currentTrackId
+      }
+    } catch (error) {
+      // Capturar excepciones para no propagar hacia void audioEngine.restore().
+      // No romper el arranque; registrar y permitir reintentos.
+      console.error('QueuePersistence.restore() fallo:', error)
+      this.restored = false
+      return null
     }
   }
 

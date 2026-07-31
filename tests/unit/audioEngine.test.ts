@@ -176,7 +176,7 @@ describe('QueuePersistence', () => {
       expect(mockGetSetting).toHaveBeenCalledTimes(1)
     })
 
-    it('una mutacion durante restauracion gana sobre lo restaurado', async () => {
+    it('una mutacion durante Promise.all gana sobre lo restaurado', async () => {
       const payload = JSON.stringify({
         manualTrackIds: [1, 2, 3],
         currentTrackId: null
@@ -201,6 +201,56 @@ describe('QueuePersistence', () => {
       const result = await persistence.restore()
       // La restauracion no se aplico: la mutacion gano
       expect(result).toBeNull()
+    })
+
+    it('una mutacion durante getSetting gana sobre lo restaurado', async () => {
+      const payload = JSON.stringify({
+        manualTrackIds: [1, 2],
+        currentTrackId: null
+      })
+
+      const persistence = new QueuePersistence('queue', 500, {
+        getSetting: async () => {
+          // Simular que el usuario encola algo mientras getSetting esta en vuelo
+          persistence.recordMutation()
+          return payload
+        },
+        setSetting: async () => undefined,
+        getTrack: async (id: number) => makeTrack(id)
+      })
+
+      const result = await persistence.restore()
+      // La restauracion no se aplico: la mutacion durante getSetting gano
+      expect(result).toBeNull()
+    })
+
+    it('si restore() falla, puede reintentar con la misma instancia', async () => {
+      const payload = JSON.stringify({
+        manualTrackIds: [1, 2],
+        currentTrackId: null
+      })
+
+      let shouldFail = true
+      const persistence = new QueuePersistence('queue', 500, {
+        getSetting: async () => payload,
+        setSetting: async () => undefined,
+        getTrack: async (id: number) => {
+          if (shouldFail && id === 1) throw new Error('IPC error')
+          return makeTrack(id)
+        }
+      })
+
+      // Primer intento falla
+      const result1 = await persistence.restore()
+      expect(result1).toBeNull()
+
+      // Cambiar para que no falle
+      shouldFail = false
+
+      // Segundo intento debe poder restaurar
+      const result2 = await persistence.restore()
+      expect(result2).not.toBeNull()
+      expect(result2?.manualTracks.map((t) => t.id)).toEqual([1, 2])
     })
 
     it('no reprograma el guardado al restaurar', async () => {
