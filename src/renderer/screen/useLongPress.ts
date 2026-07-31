@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 /** Cuanto hay que mantener OK para que aparezca el menu contextual. */
 export const LONG_PRESS_MS = 450
@@ -25,6 +25,14 @@ export function useLongPress(onPress: () => void, onLongPress: () => void): Long
       timer.current = null
     }
   }, [])
+
+  // useScreen reemplaza `items` por [] en cada cambio de vista, asi que la
+  // fila entera se desmonta al navegar. Si eso pasa con el puntero todavia
+  // apretado, el timeout de mas arriba sigue vivo y a los 450ms dispara
+  // `onLongPress` con el `index`/`controller` de un render que ya no existe,
+  // abriendo el menu contextual sobre la fila o pantalla equivocada. Este
+  // efecto cancela ese timer al desmontar para que eso no pueda pasar.
+  useEffect(() => clear, [clear])
 
   return {
     onPointerDown: useCallback(() => {

@@ -107,11 +107,22 @@ export function useKeyboardControls(controller: ScreenController): void {
       if (event.key === 'Enter') longPressFired.current = false
     }
 
+    // Si la ventana pierde el foco con Enter mantenido (alt-tab, click en
+    // otra ventana, DevTools), el keyup de Enter puede no llegar nunca y el
+    // flag queda pegado en true: a partir de ahi mantener Enter no volveria
+    // a abrir el menu contextual. El blur es la senal de que ya no hay
+    // garantia de recibir ese keyup, asi que resetea el flag por las dudas.
+    const onBlur = (): void => {
+      longPressFired.current = false
+    }
+
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onBlur)
     return () => {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onBlur)
     }
   }, [controller])
 }
