@@ -54,7 +54,9 @@ export function NowPlayingView(): JSX.Element {
           {playback.error ?? statusLabel(playback.status)}
         </span>
         <span>
-          {playback.queueLength > 0 ? `${playback.queueIndex + 1}/${playback.queueLength}` : ''}
+          {playback.manualCount + playback.upcomingCount > 0
+            ? `+${playback.manualCount + playback.upcomingCount}`
+            : ''}
         </span>
       </div>
     </div>

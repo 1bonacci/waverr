@@ -310,7 +310,7 @@ function trackItem(
       // navegacion no tiene por que quedarse esperandolo.
       dispatch({ type: 'openNowPlaying' })
       // La lista visible se convierte en la cola: asi NEXT sigue lo que se ve.
-      void audioEngine.setQueue(tracks, index)
+      void audioEngine.playNow(tracks, index)
     }
   })
 }
