@@ -1,0 +1,28 @@
+appId: com.bonacci.waverr
+productName: waverr
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**
+  - package.json
+# better-sqlite3 trae prebuilds N-API, que son estables entre Node y Electron.
+# Sin esto, electron-builder intenta recompilarlo con node-gyp y exige tener
+# Visual Studio instalado para nada.
+npmRebuild: false
+buildDependenciesFromSource: false
+asarUnpack:
+  - "**/*.node"
+  - "**/better-sqlite3/**"
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  createDesktopShortcut: true
+  shortcutName: waverr

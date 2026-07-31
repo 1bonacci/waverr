@@ -1,0 +1,65 @@
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.list::-webkit-scrollbar {
+  display: none;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--lcd-ink);
+  text-align: left;
+  flex: 0 0 auto;
+}
+
+/* La fila seleccionada se invierte, como en una LCD monocroma de verdad. */
+.rowSelected {
+  background: var(--lcd-ink);
+  color: var(--lcd-bg);
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.star {
+  flex: 0 0 auto;
+  font-size: 9px;
+  line-height: 1;
+}
+
+.meta {
+  flex: 0 0 auto;
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+.chevron {
+  flex: 0 0 auto;
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+.empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--lcd-ink-dim);
+}

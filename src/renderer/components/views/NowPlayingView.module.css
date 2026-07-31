@@ -1,0 +1,83 @@
+.view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px 8px;
+  gap: 6px;
+}
+
+.visual {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid rgba(125, 252, 180, 0.18);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.info {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.title {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--lcd-ink);
+}
+
+.subtitle {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--lcd-ink-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.times {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--lcd-ink-dim);
+}
+
+.progress {
+  height: 6px;
+  border: 1px solid var(--lcd-ink-dim);
+  border-radius: 2px;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--lcd-ink);
+}
+
+.transport {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--lcd-ink-dim);
+}
+
+.badge {
+  color: var(--lcd-ink);
+}
+
+.empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--lcd-ink-dim);
+}

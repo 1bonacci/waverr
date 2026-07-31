@@ -1,0 +1,14 @@
+node_modules/
+out/
+dist/
+*.log
+.DS_Store
+.vite/
+tests/fixtures/generated/
+
+# salidas de playwright
+test-results/
+playwright-report/
+
+# artefactos de compilacion incremental de typescript
+*.tsbuildinfo
