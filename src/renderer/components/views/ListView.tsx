@@ -12,8 +12,12 @@ interface ListViewProps {
  * busqueda y ajustes: todos llegan aca como `ScreenItem[]`.
  */
 export function ListView({ controller }: ListViewProps): JSX.Element {
-  const { items, selected, loading } = controller
+  const { items, selected, loading, view } = controller
   const selectedRef = useRef<HTMLButtonElement>(null)
+
+  // La fila agarrada en modo mover, si la hay: solo existe en COLA y PLAYLIST.
+  const movingTo =
+    (view.kind === 'queue' || view.kind === 'playlist') && view.moving ? view.moving.to : null
 
   // La fila seleccionada se mantiene visible cuando se navega con el teclado.
   useEffect(() => {
@@ -32,6 +36,7 @@ export function ListView({ controller }: ListViewProps): JSX.Element {
           item={item}
           index={index}
           selected={index === selected}
+          moving={index === movingTo}
           controller={controller}
           rowRef={index === selected ? selectedRef : undefined}
         />
@@ -44,12 +49,14 @@ function Row({
   item,
   index,
   selected,
+  moving,
   controller,
   rowRef
 }: {
   item: ScreenItem
   index: number
   selected: boolean
+  moving: boolean
   controller: ScreenController
   rowRef?: RefObject<HTMLButtonElement | null>
 }): JSX.Element {
@@ -67,7 +74,8 @@ function Row({
       ref={rowRef}
       data-testid="screen-row"
       data-selected={selected ? 'true' : 'false'}
-      className={`${styles.row} ${selected ? styles.rowSelected : ''}`}
+      data-moving={moving ? 'true' : 'false'}
+      className={`${styles.row} ${selected ? styles.rowSelected : ''} ${moving ? styles.rowMoving : ''}`}
       onContextMenu={(event) => {
         event.preventDefault()
         controller.openContextMenu(index)

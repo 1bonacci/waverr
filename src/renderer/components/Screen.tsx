@@ -5,6 +5,7 @@ import { ContextMenuView } from './views/ContextMenuView'
 import { ListView } from './views/ListView'
 import { NowPlayingView } from './views/NowPlayingView'
 import { PromptView } from './views/PromptView'
+import { QueueView } from './views/QueueView'
 import styles from './Screen.module.css'
 
 interface ScreenProps {
@@ -39,6 +40,8 @@ export function Screen({ controller }: ScreenProps): JSX.Element {
             <ContextMenuView controller={controller} target={view.target} />
           ) : view.kind === 'prompt' ? (
             <PromptView view={view} error={controller.promptError} />
+          ) : view.kind === 'queue' || view.kind === 'playlist' ? (
+            <QueueView controller={controller} />
           ) : (
             <ListView controller={controller} />
           )}

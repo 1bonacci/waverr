@@ -29,6 +29,13 @@
   color: var(--lcd-bg);
 }
 
+/* La fila agarrada en modo mover se marca punteada, se este viendo o no
+   invertida por la seleccion (las dos clases pueden convivir). */
+.rowMoving {
+  outline: 1px dashed var(--lcd-ink);
+  outline-offset: -2px;
+}
+
 .label {
   flex: 1;
   min-width: 0;

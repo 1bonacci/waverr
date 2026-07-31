@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import type { ScanProgress, Track } from '@shared/types'
 import { audioEngine } from '../audio/AudioEngine'
-import { formatTime } from '../audio/usePlayback'
+import { formatTime, usePlayback } from '../audio/usePlayback'
 import { startIndexForEntry } from './playlistPlayback'
+import { buildQueueRows, manualIndexForDrop } from './queueRows'
 import {
   currentSelection,
   currentView,
@@ -69,6 +70,9 @@ export function useScreen(): ScreenController {
   const [scan, setScan] = useState<ScanProgress | null>(null)
   const [revision, setRevision] = useState(0)
   const [promptError, setPromptError] = useState<string | null>(null)
+  // La vista COLA lee el motor directo, no la base: sin esto, encolar o
+  // pasar a la siguiente pista no refrescaria lo que se ve.
+  const playback = usePlayback()
 
   const view = currentView(state)
   const selected = currentSelection(state)
@@ -120,13 +124,36 @@ export function useScreen(): ScreenController {
       cancelled = true
     }
     // `view` se reconstruye en cada movimiento de seleccion; `viewKey` no.
+    // `playback.track?.id` y `playback.manualCount` cubren la vista COLA: no
+    // tiene una clave propia (`viewKey` es fijo, 'queue'), asi que sin esto no
+    // se enteraria de que cambio AHORA o de que se encolo/saco algo a mano.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewKey, revision, pendingTrackId])
+  }, [viewKey, revision, pendingTrackId, playback.track?.id, playback.manualCount])
 
   const activate = useCallback(() => {
+    const view_ = view
+    // Con una fila agarrada, OK la suelta en vez de activarla.
+    if ((view_.kind === 'queue' || view_.kind === 'playlist') && view_.moving) {
+      const { from, to } = view_.moving
+      if (view_.kind === 'queue') {
+        // `from`/`to` son indices de fila de la lista completa (AHORA +
+        // MANUAL + LUEGO); moveInQueue espera un indice dentro de la cola
+        // manual nada mas. En vez de restar un offset a mano (facil de
+        // desalinear si la fila AHORA no esta), se arma la lista de filas de
+        // la cola y se lee el indice de dominio que cada una ya trae.
+        const rows = buildQueueRows(audioEngine.getQueueView())
+        audioEngine.moveInQueue(manualIndexForDrop(rows, from), manualIndexForDrop(rows, to))
+      } else {
+        void window.waverr.library.movePlaylistItem(view_.playlistId, from, to)
+      }
+      dispatch({ type: 'dropMove' })
+      setRevision((current) => current + 1)
+      return
+    }
+
     const item = items[selected]
     if (item) void item.activate()
-  }, [items, selected])
+  }, [items, selected, view])
 
   const moveBy = useCallback(
     (delta: number) => dispatch({ type: 'move', delta, itemCount: items.length }),
@@ -337,7 +364,69 @@ async function buildItems(
       }))
     }
 
-    case 'queue':
+    case 'queue': {
+      const rows = buildQueueRows(audioEngine.getQueueView())
+      const upcomingTracks = rows
+        .filter((row) => row.section === 'upcoming')
+        .map((row) => row.track)
+      const items: ScreenItem[] = []
+
+      for (const row of rows) {
+        if (row.section === 'now') {
+          items.push({
+            key: 'now',
+            label: displayName(row.track),
+            meta: 'AHORA',
+            activate: () => dispatch({ type: 'openNowPlaying' })
+          })
+          continue
+        }
+
+        if (row.section === 'manual') {
+          const manualIndex = row.manualIndex
+          items.push({
+            key: `manual-${manualIndex}-${row.track.id}`,
+            label: displayName(row.track),
+            meta: formatTime(row.track.durationMs ?? 0),
+            trackId: row.track.id,
+            favorite: row.track.favorite,
+            contextTarget: {
+              label: displayName(row.track),
+              // El indice es dentro de la cola manual: es lo que entienden
+              // moveInQueue y removeFromQueue.
+              index: manualIndex,
+              origin: 'queue',
+              trackId: row.track.id
+            },
+            activate: () => {
+              // Saltar directo a un encolado: se descarta lo anterior de la cola.
+              for (let skipped = 0; skipped < manualIndex; skipped++) audioEngine.removeFromQueue(0)
+              void audioEngine.next()
+              dispatch({ type: 'openNowPlaying' })
+            }
+          })
+          continue
+        }
+
+        // LUEGO: nunca lleva contextTarget, asi que nunca ofrece MOVER/QUITAR.
+        const upcomingIndex = row.upcomingIndex
+        items.push({
+          key: `upcoming-${upcomingIndex}-${row.track.id}`,
+          label: displayName(row.track),
+          meta: formatTime(row.track.durationMs ?? 0),
+          trackId: row.track.id,
+          favorite: row.track.favorite,
+          activate: () => {
+            dispatch({ type: 'openNowPlaying' })
+            void audioEngine.playNow(upcomingTracks, upcomingIndex)
+          }
+        })
+      }
+
+      if (items.length === 0) return [emptyItem('COLA VACIA')]
+      return items
+    }
+
     case 'prompt':
       return []
   }
@@ -620,8 +709,13 @@ async function buildContextItems(
       key: 'move',
       label: 'MOVER',
       activate: () => {
+        // No hace falta un `setSelection` aca: `openContextMenu` ya dejo la
+        // seleccion de la vista de abajo en la fila que se toco (long-press o
+        // click derecho), y `back` no la toca. Reponerla con `target.index`
+        // seria ademas incorrecto para la cola cuando hay fila AHORA: ese
+        // indice es de dominio (posicion en la cola manual), no de fila, y
+        // ambos difieren en uno justo en ese caso.
         dispatch({ type: 'back' })
-        dispatch({ type: 'setSelection', index: target.index })
         dispatch({ type: 'startMove' })
       }
     })
