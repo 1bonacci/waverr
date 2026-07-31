@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import { usePlayback } from '../audio/usePlayback'
 import type { ScreenController } from '../screen/useScreen'
+import { ContextMenuView } from './views/ContextMenuView'
 import { ListView } from './views/ListView'
 import { NowPlayingView } from './views/NowPlayingView'
 import styles from './Screen.module.css'
@@ -31,7 +32,13 @@ export function Screen({ controller }: ScreenProps): JSX.Element {
         </div>
 
         <div className={styles.body}>
-          {view.kind === 'nowPlaying' ? <NowPlayingView /> : <ListView controller={controller} />}
+          {view.kind === 'nowPlaying' ? (
+            <NowPlayingView />
+          ) : view.kind === 'context' ? (
+            <ContextMenuView controller={controller} target={view.target} />
+          ) : (
+            <ListView controller={controller} />
+          )}
         </div>
       </div>
     </div>

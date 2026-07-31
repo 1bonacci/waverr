@@ -7,6 +7,7 @@ import {
   currentView,
   INITIAL_SCREEN_STATE,
   screenReducer,
+  type ContextTarget,
   type MenuId,
   type ScreenAction,
   type View
@@ -23,6 +24,8 @@ export interface ScreenItem {
   /** Presente solo en filas que son pistas: habilita marcarlas como favoritas. */
   trackId?: number
   favorite?: boolean
+  /** Presente solo en filas donde tiene sentido el menu contextual. */
+  contextTarget?: ContextTarget
   activate: () => void | Promise<void>
 }
 
@@ -39,6 +42,8 @@ export interface ScreenController {
   moveBy: (delta: number) => void
   /** Marca/desmarca la pista seleccionada, o la que suena si no hay lista. */
   toggleFavorite: () => void
+  /** Abre el menu contextual sobre la fila `index`, si tiene acciones definidas. */
+  openContextMenu: (index: number) => void
 }
 
 const ROOT_MENU: Array<{ id: string; label: string; view: View }> = [
@@ -122,6 +127,16 @@ export function useScreen(): ScreenController {
     })
   }, [items, selected])
 
+  const openContextMenu = useCallback(
+    (index: number) => {
+      const target = items[index]?.contextTarget
+      if (!target) return
+      dispatch({ type: 'setSelection', index })
+      dispatch({ type: 'push', view: { kind: 'context', target, selected: 0 } })
+    },
+    [items]
+  )
+
   return {
     view,
     title: titleFor(view),
@@ -132,7 +147,8 @@ export function useScreen(): ScreenController {
     dispatch,
     activate,
     moveBy,
-    toggleFavorite
+    toggleFavorite,
+    openContextMenu
   }
 }
 
@@ -217,10 +233,12 @@ async function buildItems(
       return tracks.map(trackItem(tracks, dispatch))
     }
 
+    case 'context':
+      return buildContextItems(view.target, dispatch)
+
     case 'queue':
     case 'playlist':
     case 'prompt':
-    case 'context':
       return []
   }
 }
@@ -321,6 +339,100 @@ async function buildMenuItems(
   }
 }
 
+/**
+ * Acciones sobre una fila. MOVER y QUITAR solo aparecen donde tienen sentido:
+ * en la cola y adentro de una playlist.
+ */
+async function buildContextItems(
+  target: ContextTarget,
+  dispatch: (action: ScreenAction) => void
+): Promise<ScreenItem[]> {
+  const items: ScreenItem[] = []
+
+  if (target.trackId !== undefined) {
+    const trackId = target.trackId
+
+    items.push({
+      key: 'play',
+      label: 'REPRODUCIR AHORA',
+      activate: async () => {
+        const track = await window.waverr.library.getTrack(trackId)
+        if (!track) return
+        dispatch({ type: 'back' })
+        dispatch({ type: 'openNowPlaying' })
+        void audioEngine.playNow([track], 0)
+      }
+    })
+
+    items.push({
+      key: 'next',
+      label: 'ENCOLAR SIGUIENTE',
+      activate: async () => {
+        const track = await window.waverr.library.getTrack(trackId)
+        if (track) audioEngine.enqueueNext(track)
+        dispatch({ type: 'back' })
+      }
+    })
+
+    items.push({
+      key: 'last',
+      label: 'ENCOLAR AL FINAL',
+      activate: async () => {
+        const track = await window.waverr.library.getTrack(trackId)
+        if (track) audioEngine.enqueue(track)
+        dispatch({ type: 'back' })
+      }
+    })
+
+    items.push({
+      key: 'playlist',
+      label: 'AGREGAR A PLAYLIST',
+      drillsDown: true,
+      activate: () =>
+        dispatch({
+          type: 'push',
+          view: { kind: 'menu', menu: 'playlistPicker', selected: 0 }
+        })
+    })
+
+    items.push({
+      key: 'favorite',
+      label: 'FAVORITO',
+      activate: async () => {
+        await window.waverr.library.toggleFavorite(trackId)
+        dispatch({ type: 'back' })
+      }
+    })
+  }
+
+  if (target.origin === 'queue' || target.origin === 'playlist') {
+    items.push({
+      key: 'move',
+      label: 'MOVER',
+      activate: () => {
+        dispatch({ type: 'back' })
+        dispatch({ type: 'setSelection', index: target.index })
+        dispatch({ type: 'startMove' })
+      }
+    })
+
+    items.push({
+      key: 'remove',
+      label: 'QUITAR',
+      activate: async () => {
+        if (target.origin === 'queue') {
+          audioEngine.removeFromQueue(target.index)
+        } else if (target.itemId !== undefined) {
+          await window.waverr.library.removeFromPlaylist(target.itemId)
+        }
+        dispatch({ type: 'back' })
+      }
+    })
+  }
+
+  return items
+}
+
 function trackItem(
   tracks: Track[],
   dispatch: (action: ScreenAction) => void
@@ -331,6 +443,12 @@ function trackItem(
     meta: track.durationMs ? formatTime(track.durationMs) : track.ext.slice(1).toUpperCase(),
     trackId: track.id,
     favorite: track.favorite,
+    contextTarget: {
+      label: displayName(track),
+      index,
+      origin: 'library',
+      trackId: track.id
+    },
     activate: () => {
       // La pantalla cambia primero: cargar el audio puede tardar y la
       // navegacion no tiene por que quedarse esperandolo.

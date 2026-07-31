@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { audioEngine } from '../audio/AudioEngine'
 import { useUiStore } from '../store/ui'
 import type { ScreenController } from './useScreen'
@@ -11,6 +11,10 @@ const SEEK_STEP_MS = 5000
  * fisico equivalente, asi que se puede usar waverr entero sin tocar el mouse.
  */
 export function useKeyboardControls(controller: ScreenController): void {
+  // Marca si la repeticion de Enter ya disparo el menu contextual, para no
+  // abrirlo de nuevo en cada tick de autorepeat mientras se mantiene apretado.
+  const longPressFired = useRef(false)
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const { key, ctrlKey, altKey, metaKey } = event
@@ -35,6 +39,15 @@ export function useKeyboardControls(controller: ScreenController): void {
           return
         case 'Enter':
           event.preventDefault()
+          // Mantener Enter dispara autorepeat: la primera repeticion es el
+          // equivalente de teclado a mantener OK apretado.
+          if (event.repeat) {
+            if (!longPressFired.current) {
+              longPressFired.current = true
+              controller.openContextMenu(controller.selected)
+            }
+            return
+          }
           controller.activate()
           return
         case 'Escape':
@@ -90,7 +103,15 @@ export function useKeyboardControls(controller: ScreenController): void {
       }
     }
 
+    const onKeyUp = (event: KeyboardEvent): void => {
+      if (event.key === 'Enter') longPressFired.current = false
+    }
+
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+    }
   }, [controller])
 }

@@ -1,5 +1,6 @@
-import { useEffect, useRef, type JSX } from 'react'
-import type { ScreenController } from '../../screen/useScreen'
+import { useEffect, useRef, type JSX, type RefObject } from 'react'
+import type { ScreenController, ScreenItem } from '../../screen/useScreen'
+import { useLongPress } from '../../screen/useLongPress'
 import styles from './ListView.module.css'
 
 interface ListViewProps {
@@ -26,24 +27,57 @@ export function ListView({ controller }: ListViewProps): JSX.Element {
   return (
     <div className={styles.list} data-testid="screen-list">
       {items.map((item, index) => (
-        <button
-          type="button"
+        <Row
           key={item.key}
-          ref={index === selected ? selectedRef : undefined}
-          data-testid="screen-row"
-          data-selected={index === selected ? 'true' : 'false'}
-          className={`${styles.row} ${index === selected ? styles.rowSelected : ''}`}
-          onClick={() => {
-            controller.dispatch({ type: 'setSelection', index })
-            void item.activate()
-          }}
-        >
-          {item.favorite && <span className={styles.star}>★</span>}
-          <span className={styles.label}>{item.label}</span>
-          {item.meta && <span className={styles.meta}>{item.meta}</span>}
-          {item.drillsDown && <span className={styles.chevron}>&gt;</span>}
-        </button>
+          item={item}
+          index={index}
+          selected={index === selected}
+          controller={controller}
+          rowRef={index === selected ? selectedRef : undefined}
+        />
       ))}
     </div>
+  )
+}
+
+function Row({
+  item,
+  index,
+  selected,
+  controller,
+  rowRef
+}: {
+  item: ScreenItem
+  index: number
+  selected: boolean
+  controller: ScreenController
+  rowRef?: RefObject<HTMLButtonElement | null>
+}): JSX.Element {
+  const press = useLongPress(
+    () => {
+      controller.dispatch({ type: 'setSelection', index })
+      void item.activate()
+    },
+    () => controller.openContextMenu(index)
+  )
+
+  return (
+    <button
+      type="button"
+      ref={rowRef}
+      data-testid="screen-row"
+      data-selected={selected ? 'true' : 'false'}
+      className={`${styles.row} ${selected ? styles.rowSelected : ''}`}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        controller.openContextMenu(index)
+      }}
+      {...press}
+    >
+      {item.favorite && <span className={styles.star}>★</span>}
+      <span className={styles.label}>{item.label}</span>
+      {item.meta && <span className={styles.meta}>{item.meta}</span>}
+      {item.drillsDown && <span className={styles.chevron}>&gt;</span>}
+    </button>
   )
 }
