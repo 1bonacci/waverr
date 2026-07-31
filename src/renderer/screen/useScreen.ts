@@ -3,6 +3,7 @@ import type { ScanProgress, Track } from '@shared/types'
 import { audioEngine } from '../audio/AudioEngine'
 import { formatTime } from '../audio/usePlayback'
 import {
+  currentSelection,
   currentView,
   INITIAL_SCREEN_STATE,
   screenReducer,
@@ -44,7 +45,8 @@ const ROOT_MENU: Array<{ id: string; label: string; view: View }> = [
   { id: 'folders', label: 'CARPETAS', view: { kind: 'menu', menu: 'folders', selected: 0 } },
   { id: 'recent', label: 'RECIENTES', view: { kind: 'menu', menu: 'recent', selected: 0 } },
   { id: 'favorites', label: 'FAVORITOS', view: { kind: 'menu', menu: 'favorites', selected: 0 } },
-  { id: 'queue', label: 'COLA', view: { kind: 'menu', menu: 'queue', selected: 0 } },
+  { id: 'playlists', label: 'PLAYLISTS', view: { kind: 'menu', menu: 'playlists', selected: 0 } },
+  { id: 'queue', label: 'COLA', view: { kind: 'queue', selected: 0, moving: null } },
   { id: 'settings', label: 'AJUSTES', view: { kind: 'menu', menu: 'settings', selected: 0 } }
 ]
 
@@ -58,7 +60,7 @@ export function useScreen(): ScreenController {
   const [revision, setRevision] = useState(0)
 
   const view = currentView(state)
-  const selected = view.kind === 'nowPlaying' ? -1 : view.selected
+  const selected = currentSelection(state)
 
   useEffect(() => {
     return window.waverr.library.onScanProgress((progress) => {
@@ -142,6 +144,14 @@ function describeView(view: View): string {
       return `folder:${view.path}`
     case 'search':
       return `search:${view.query}`
+    case 'queue':
+      return 'queue'
+    case 'playlist':
+      return `playlist:${view.playlistId}`
+    case 'prompt':
+      return `prompt:${view.intent.kind}`
+    case 'context':
+      return `context:${view.target.origin}:${view.target.index}`
     case 'nowPlaying':
       return 'nowPlaying'
   }
@@ -155,6 +165,14 @@ function titleFor(view: View): string {
       return view.name.toUpperCase()
     case 'search':
       return `BUSCAR: ${view.query.toUpperCase()}`
+    case 'queue':
+      return 'COLA'
+    case 'playlist':
+      return view.name.toUpperCase()
+    case 'prompt':
+      return view.label
+    case 'context':
+      return 'ACCIONES'
     case 'nowPlaying':
       return 'REPRODUCIENDO'
   }
@@ -165,7 +183,8 @@ const MENU_TITLES: Record<MenuId, string> = {
   folders: 'CARPETAS',
   recent: 'RECIENTES',
   favorites: 'FAVORITOS',
-  queue: 'COLA',
+  playlists: 'PLAYLISTS',
+  playlistPicker: 'A PLAYLIST',
   settings: 'AJUSTES'
 }
 
@@ -197,6 +216,12 @@ async function buildItems(
       })
       return tracks.map(trackItem(tracks, dispatch))
     }
+
+    case 'queue':
+    case 'playlist':
+    case 'prompt':
+    case 'context':
+      return []
   }
 }
 
@@ -245,8 +270,9 @@ async function buildMenuItems(
       return tracks.map(trackItem(tracks, dispatch))
     }
 
-    case 'queue':
-      return [emptyItem('COLA VACIA')]
+    case 'playlists':
+    case 'playlistPicker':
+      return [emptyItem('VACIO')]
 
     case 'settings': {
       const [roots, stats] = await Promise.all([

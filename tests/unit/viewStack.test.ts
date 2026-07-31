@@ -134,3 +134,139 @@ describe('busqueda al tipear', () => {
     expect(state).toEqual(INITIAL_SCREEN_STATE)
   })
 })
+
+describe('vista de texto', () => {
+  const promptView = {
+    kind: 'prompt' as const,
+    label: 'NOMBRE',
+    value: '',
+    intent: { kind: 'newPlaylist' as const }
+  }
+
+  it('tipear escribe en el prompt en vez de abrir la busqueda', () => {
+    const state = run([
+      { type: 'push', view: promptView },
+      { type: 'typeChar', char: 'E' },
+      { type: 'typeChar', char: 'P' }
+    ])
+    expect(currentView(state)).toMatchObject({ kind: 'prompt', value: 'EP' })
+    expect(state.stack).toHaveLength(2)
+  })
+
+  it('backspace borra una letra del prompt', () => {
+    const state = run([
+      { type: 'push', view: promptView },
+      { type: 'typeChar', char: 'E' },
+      { type: 'typeChar', char: 'P' },
+      { type: 'backspace' }
+    ])
+    expect(currentView(state)).toMatchObject({ value: 'E' })
+  })
+
+  it('backspace con el prompt vacio lo cierra', () => {
+    const state = run([{ type: 'push', view: promptView }, { type: 'backspace' }])
+    expect(currentView(state)).toMatchObject({ kind: 'menu', menu: 'root' })
+  })
+
+  it('confirmar cierra el prompt', () => {
+    const state = run([
+      { type: 'push', view: promptView },
+      { type: 'typeChar', char: 'X' },
+      { type: 'confirmPrompt' }
+    ])
+    expect(currentView(state)).toMatchObject({ kind: 'menu', menu: 'root' })
+  })
+})
+
+describe('modo mover', () => {
+  const queueView = { kind: 'queue' as const, selected: 1, moving: null }
+
+  it('empezar a mover agarra la fila seleccionada', () => {
+    const state = run([{ type: 'push', view: queueView }, { type: 'startMove' }])
+    expect(currentView(state)).toMatchObject({ moving: { from: 1, to: 1 } })
+  })
+
+  it('mover arrastra la fila y la seleccion juntas', () => {
+    const state = run([
+      { type: 'push', view: queueView },
+      { type: 'startMove' },
+      { type: 'moveHeld', delta: 1, itemCount: 4 }
+    ])
+    expect(currentView(state)).toMatchObject({ moving: { from: 1, to: 2 }, selected: 2 })
+  })
+
+  it('mover satura en los extremos en vez de envolver', () => {
+    const state = run([
+      { type: 'push', view: queueView },
+      { type: 'startMove' },
+      { type: 'moveHeld', delta: -5, itemCount: 4 }
+    ])
+    expect(currentView(state)).toMatchObject({ moving: { from: 1, to: 0 }, selected: 0 })
+  })
+
+  it('soltar termina el modo mover', () => {
+    const state = run([
+      { type: 'push', view: queueView },
+      { type: 'startMove' },
+      { type: 'moveHeld', delta: 1, itemCount: 4 },
+      { type: 'dropMove' }
+    ])
+    expect(currentView(state)).toMatchObject({ moving: null, selected: 2 })
+  })
+
+  it('cancelar devuelve la seleccion a donde estaba', () => {
+    const state = run([
+      { type: 'push', view: queueView },
+      { type: 'startMove' },
+      { type: 'moveHeld', delta: 2, itemCount: 4 },
+      { type: 'cancelMove' }
+    ])
+    expect(currentView(state)).toMatchObject({ moving: null, selected: 1 })
+  })
+
+  it('MENU no sale de la vista mientras se esta moviendo', () => {
+    const state = run([
+      { type: 'push', view: queueView },
+      { type: 'startMove' },
+      { type: 'back' }
+    ])
+    expect(currentView(state)).toMatchObject({ kind: 'queue', moving: null })
+    expect(state.stack).toHaveLength(2)
+  })
+
+  it('startMove no hace nada en una vista que no se reordena', () => {
+    const state = run([{ type: 'startMove' }])
+    expect(state).toEqual(INITIAL_SCREEN_STATE)
+  })
+})
+
+describe('menu contextual', () => {
+  const target = {
+    label: 'beat_v3.wav',
+    index: 0,
+    origin: 'library' as const,
+    trackId: 7
+  }
+
+  it('se apila sobre la vista actual', () => {
+    const state = run([{ type: 'push', view: { kind: 'context', target, selected: 0 } }])
+    expect(currentView(state)).toMatchObject({ kind: 'context' })
+    expect(state.stack).toHaveLength(2)
+  })
+
+  it('MENU lo cierra y vuelve a la lista', () => {
+    const state = run([
+      { type: 'push', view: { kind: 'context', target, selected: 0 } },
+      { type: 'back' }
+    ])
+    expect(currentView(state)).toMatchObject({ kind: 'menu', menu: 'root' })
+  })
+
+  it('tipear adentro del menu contextual no abre la busqueda', () => {
+    const state = run([
+      { type: 'push', view: { kind: 'context', target, selected: 0 } },
+      { type: 'typeChar', char: 'b' }
+    ])
+    expect(currentView(state)).toMatchObject({ kind: 'context' })
+  })
+})
