@@ -73,6 +73,12 @@ export function useKeyboardControls(controller: ScreenController): void {
           return
         case ' ':
           event.preventDefault()
+          // En el prompt el espacio es un caracter mas del nombre (playlists
+          // como "Musica de auto" lo necesitan); en el resto pausa/reanuda.
+          if (controller.view.kind === 'prompt') {
+            controller.dispatch({ type: 'typeChar', char: ' ' })
+            return
+          }
           void audioEngine.toggle()
           return
         case 'ArrowLeft':
@@ -91,9 +97,9 @@ export function useKeyboardControls(controller: ScreenController): void {
           return
       }
 
-      // V y F son atajos solo fuera de la busqueda: mientras se filtra, esas
-      // letras le pertenecen al texto.
-      if (controller.view.kind !== 'search') {
+      // V y F son atajos solo fuera de la busqueda y del prompt: mientras se
+      // filtra o se escribe un nombre, esas letras le pertenecen al texto.
+      if (controller.view.kind !== 'search' && controller.view.kind !== 'prompt') {
         if (key === 'v' || key === 'V') {
           event.preventDefault()
           useUiStore.getState().cycleVisualizer()

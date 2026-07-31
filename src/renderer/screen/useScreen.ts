@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import type { ScanProgress, Track } from '@shared/types'
 import { audioEngine } from '../audio/AudioEngine'
 import { formatTime } from '../audio/usePlayback'
+import { startIndexForEntry } from './playlistPlayback'
 import {
   currentSelection,
   currentView,
@@ -186,6 +187,18 @@ export function useScreen(): ScreenController {
 
     setPromptError(null)
     dispatch({ type: 'confirmPrompt' })
+    // Si el prompt vino del picker de "AGREGAR A PLAYLIST" (trae la pista a
+    // agregar), tiene que terminar en el mismo lugar que elegir una playlist
+    // ya existente: la lista de origen. La pila en ese caso es
+    // [..., lista, context, playlistPicker, prompt]; 'confirmPrompt' ya saco
+    // el prompt, faltan otros dos 'back' para sacar el picker y el menu
+    // contextual. El otro uso de newPlaylist (desde la vista PLAYLISTS, sin
+    // trackIdToAdd) no tiene ese picker ni ese context debajo: ahi hay que
+    // quedarse viendo la lista de playlists con la recien creada.
+    if (intent.kind === 'newPlaylist' && intent.trackIdToAdd !== undefined) {
+      dispatch({ type: 'back' })
+      dispatch({ type: 'back' })
+    }
     setRevision((current) => current + 1)
   }, [view])
 
@@ -310,11 +323,16 @@ async function buildItems(
           itemId: entry.itemId
         },
         activate: () => {
+          // Las perdidas se saltean: si la elegida no suena, arranca en la
+          // primera reproducible que venga despues. Si no queda ninguna, no
+          // arranca nada (y la pantalla no se va a NOW PLAYING de arriba).
+          const startIndex = startIndexForEntry(entries, entry.itemId)
+          if (startIndex === null) return
           dispatch({ type: 'openNowPlaying' })
-          // Las perdidas se saltean: no tiene sentido intentar reproducirlas.
-          const playable = entries.filter((candidate) => !candidate.missing)
-          const startIndex = playable.findIndex((candidate) => candidate.itemId === entry.itemId)
-          void audioEngine.playNow(playable, Math.max(0, startIndex))
+          void audioEngine.playNow(
+            entries.filter((candidate) => !candidate.missing),
+            startIndex
+          )
         }
       }))
     }

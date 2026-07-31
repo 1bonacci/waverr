@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, type PointerEvent } from 'react'
 
 /** Cuanto hay que mantener OK para que aparezca el menu contextual. */
 export const LONG_PRESS_MS = 450
 
 interface LongPressHandlers {
-  onPointerDown: () => void
-  onPointerUp: () => void
+  onPointerDown: (event: PointerEvent) => void
+  onPointerUp: (event: PointerEvent) => void
   onPointerLeave: () => void
 }
 
@@ -35,19 +35,30 @@ export function useLongPress(onPress: () => void, onLongPress: () => void): Long
   useEffect(() => clear, [clear])
 
   return {
-    onPointerDown: useCallback(() => {
-      fired.current = false
-      clear()
-      timer.current = setTimeout(() => {
-        fired.current = true
-        onLongPress()
-      }, LONG_PRESS_MS)
-    }, [clear, onLongPress]),
+    // Solo el boton primario (izquierdo, o el toque) cuenta como press: el
+    // derecho ya tiene su propio significado (abre el menu contextual via
+    // el evento nativo `contextmenu`) y no tiene que ademas activar la fila.
+    onPointerDown: useCallback(
+      (event: PointerEvent) => {
+        if (event.button !== 0) return
+        fired.current = false
+        clear()
+        timer.current = setTimeout(() => {
+          fired.current = true
+          onLongPress()
+        }, LONG_PRESS_MS)
+      },
+      [clear, onLongPress]
+    ),
 
-    onPointerUp: useCallback(() => {
-      clear()
-      if (!fired.current) onPress()
-    }, [clear, onPress]),
+    onPointerUp: useCallback(
+      (event: PointerEvent) => {
+        if (event.button !== 0) return
+        clear()
+        if (!fired.current) onPress()
+      },
+      [clear, onPress]
+    ),
 
     onPointerLeave: useCallback(() => {
       clear()
