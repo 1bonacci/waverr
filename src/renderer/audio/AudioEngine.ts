@@ -19,6 +19,13 @@ import {
 export type PlaybackStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'error'
 export type { RepeatMode } from './playbackQueue'
 
+/** Clave de `settings` donde se guarda la cola manual. */
+const QUEUE_SETTING_KEY = 'queue'
+
+/** Espera antes de escribir: encolar cinco temas seguidos hace una sola
+ *  escritura, no cinco. */
+const SAVE_DEBOUNCE_MS = 500
+
 export interface PlaybackState {
   track: Track | null
   status: PlaybackStatus
@@ -69,6 +76,8 @@ export class AudioEngine {
 
   private state: PlaybackState = INITIAL_STATE
   private readonly listeners = new Set<() => void>()
+
+  private saveTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor() {
     this.audio = new Audio()
@@ -292,6 +301,52 @@ export class AudioEngine {
 
   /** Refleja en el estado observable los conteos de la cola. */
   private publishQueue(): void {
+    const view = queueView(this.queue)
+    this.patch({ manualCount: view.manual.length, upcomingCount: view.upcoming.length })
+    this.scheduleSave()
+  }
+
+  private scheduleSave(): void {
+    if (this.saveTimer !== null) clearTimeout(this.saveTimer)
+    this.saveTimer = setTimeout(() => {
+      const payload = JSON.stringify({
+        manualTrackIds: this.queue.manual.map((track) => track.id),
+        currentTrackId: this.queue.current?.id ?? null
+      })
+      void window.waverr.library.setSetting(QUEUE_SETTING_KEY, payload)
+    }, SAVE_DEBOUNCE_MS)
+  }
+
+  /**
+   * Recupera la cola manual de la sesion anterior.
+   *
+   * El contexto no se guarda: era la vista que estabas mirando y al reabrir la
+   * app esa vista ya no existe. Los ids que ya no estan en el indice se
+   * descartan en silencio.
+   */
+  async restore(): Promise<void> {
+    const raw = await window.waverr.library.getSetting(QUEUE_SETTING_KEY)
+    if (!raw) return
+
+    let parsed: { manualTrackIds?: unknown; currentTrackId?: unknown }
+    try {
+      parsed = JSON.parse(raw) as typeof parsed
+    } catch {
+      return
+    }
+
+    const ids = Array.isArray(parsed.manualTrackIds)
+      ? parsed.manualTrackIds.filter((id): id is number => typeof id === 'number')
+      : []
+
+    const tracks: Track[] = []
+    for (const id of ids) {
+      const track = await window.waverr.library.getTrack(id)
+      if (track && !track.missing) tracks.push(track)
+    }
+
+    this.queue = { ...this.queue, manual: tracks }
+    // Se publica sin reprogramar el guardado: restaurar no es un cambio.
     const view = queueView(this.queue)
     this.patch({ manualCount: view.manual.length, upcomingCount: view.upcoming.length })
   }
