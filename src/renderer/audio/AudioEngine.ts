@@ -15,6 +15,7 @@ import {
   type QueueView,
   type RepeatMode
 } from './playbackQueue'
+import { QueuePersistence } from './queuePersistence'
 
 export type PlaybackStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'error'
 export type { RepeatMode } from './playbackQueue'
@@ -77,9 +78,11 @@ export class AudioEngine {
   private state: PlaybackState = INITIAL_STATE
   private readonly listeners = new Set<() => void>()
 
-  private saveTimer: ReturnType<typeof setTimeout> | null = null
+  private persistence: QueuePersistence
 
   constructor() {
+    this.persistence = new QueuePersistence(QUEUE_SETTING_KEY, SAVE_DEBOUNCE_MS)
+
     this.audio = new Audio()
     this.audio.preload = 'metadata'
     // Sin esto el nodo de analisis queda "tainted" y el visualizador ve ceros.
@@ -108,6 +111,8 @@ export class AudioEngine {
       // reporta Infinity hasta que termina de bufferear.
       this.patch({ durationMs: this.state.track?.durationMs ?? fromFile ?? 0 })
     })
+
+    this.persistence.setupUnloadHandler(() => this.flushPendingSave())
   }
 
   // --- Suscripcion (useSyncExternalStore) --------------------------------
@@ -303,18 +308,11 @@ export class AudioEngine {
   private publishQueue(): void {
     const view = queueView(this.queue)
     this.patch({ manualCount: view.manual.length, upcomingCount: view.upcoming.length })
-    this.scheduleSave()
-  }
-
-  private scheduleSave(): void {
-    if (this.saveTimer !== null) clearTimeout(this.saveTimer)
-    this.saveTimer = setTimeout(() => {
-      const payload = JSON.stringify({
-        manualTrackIds: this.queue.manual.map((track) => track.id),
-        currentTrackId: this.queue.current?.id ?? null
-      })
-      void window.waverr.library.setSetting(QUEUE_SETTING_KEY, payload)
-    }, SAVE_DEBOUNCE_MS)
+    this.persistence.recordMutation()
+    this.persistence.scheduleSave({
+      manualTracks: this.queue.manual,
+      currentTrackId: this.queue.current?.id ?? null
+    })
   }
 
   /**
@@ -323,32 +321,25 @@ export class AudioEngine {
    * El contexto no se guarda: era la vista que estabas mirando y al reabrir la
    * app esa vista ya no existe. Los ids que ya no estan en el indice se
    * descartan en silencio.
+   *
+   * Es idempotente: en StrictMode React monta dos veces, esto solo restaura una.
+   * Si la cola fue mutada durante la restauracion, la mutacion gana.
    */
   async restore(): Promise<void> {
-    const raw = await window.waverr.library.getSetting(QUEUE_SETTING_KEY)
-    if (!raw) return
+    const restored = await this.persistence.restore()
+    if (!restored) return
 
-    let parsed: { manualTrackIds?: unknown; currentTrackId?: unknown }
-    try {
-      parsed = JSON.parse(raw) as typeof parsed
-    } catch {
-      return
-    }
-
-    const ids = Array.isArray(parsed.manualTrackIds)
-      ? parsed.manualTrackIds.filter((id): id is number => typeof id === 'number')
-      : []
-
-    const tracks: Track[] = []
-    for (const id of ids) {
-      const track = await window.waverr.library.getTrack(id)
-      if (track && !track.missing) tracks.push(track)
-    }
-
-    this.queue = { ...this.queue, manual: tracks }
+    this.queue = { ...this.queue, manual: restored.manualTracks }
     // Se publica sin reprogramar el guardado: restaurar no es un cambio.
     const view = queueView(this.queue)
     this.patch({ manualCount: view.manual.length, upcomingCount: view.upcoming.length })
+  }
+
+  private flushPendingSave(): void {
+    this.persistence.flushPendingSave({
+      manualTracks: this.queue.manual,
+      currentTrackId: this.queue.current?.id ?? null
+    })
   }
 
   private handleEnded(): void {
