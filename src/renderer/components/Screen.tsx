@@ -4,6 +4,7 @@ import type { ScreenController } from '../screen/useScreen'
 import { ContextMenuView } from './views/ContextMenuView'
 import { ListView } from './views/ListView'
 import { NowPlayingView } from './views/NowPlayingView'
+import { PromptView } from './views/PromptView'
 import styles from './Screen.module.css'
 
 interface ScreenProps {
@@ -36,6 +37,8 @@ export function Screen({ controller }: ScreenProps): JSX.Element {
             <NowPlayingView />
           ) : view.kind === 'context' ? (
             <ContextMenuView controller={controller} target={view.target} />
+          ) : view.kind === 'prompt' ? (
+            <PromptView view={view} error={controller.promptError} />
           ) : (
             <ListView controller={controller} />
           )}

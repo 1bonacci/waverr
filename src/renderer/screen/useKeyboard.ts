@@ -39,6 +39,12 @@ export function useKeyboardControls(controller: ScreenController): void {
           return
         case 'Enter':
           event.preventDefault()
+          // En el prompt, Enter confirma el texto en vez de activar una fila:
+          // no hay lista, ni tiene sentido el menu contextual sobre autorepeat.
+          if (controller.view.kind === 'prompt') {
+            if (!event.repeat) controller.confirmPrompt()
+            return
+          }
           // Mantener Enter dispara autorepeat: la primera repeticion es el
           // equivalente de teclado a mantener OK apretado.
           if (event.repeat) {
@@ -56,9 +62,13 @@ export function useKeyboardControls(controller: ScreenController): void {
           return
         case 'Backspace':
           event.preventDefault()
-          // Dentro de la busqueda borra una letra; en el resto es "atras".
+          // Dentro de la busqueda o el prompt borra una letra (y el propio
+          // reducer cierra la vista si ya no queda nada que borrar); en el
+          // resto es "atras".
           controller.dispatch(
-            controller.view.kind === 'search' ? { type: 'backspace' } : { type: 'back' }
+            controller.view.kind === 'search' || controller.view.kind === 'prompt'
+              ? { type: 'backspace' }
+              : { type: 'back' }
           )
           return
         case ' ':

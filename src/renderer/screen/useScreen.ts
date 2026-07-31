@@ -44,6 +44,10 @@ export interface ScreenController {
   toggleFavorite: () => void
   /** Abre el menu contextual sobre la fila `index`, si tiene acciones definidas. */
   openContextMenu: (index: number) => void
+  /** Aplica el `PromptIntent` de la vista actual. No hace nada fuera de `prompt`. */
+  confirmPrompt: () => void
+  /** Mensaje de error del prompt actual (nombre repetido), o null si no hay. */
+  promptError: string | null
 }
 
 const ROOT_MENU: Array<{ id: string; label: string; view: View }> = [
@@ -63,9 +67,20 @@ export function useScreen(): ScreenController {
   const [loading, setLoading] = useState(false)
   const [scan, setScan] = useState<ScanProgress | null>(null)
   const [revision, setRevision] = useState(0)
+  const [promptError, setPromptError] = useState<string | null>(null)
 
   const view = currentView(state)
   const selected = currentSelection(state)
+
+  // La pista que se esta agregando a una playlist, si la hay: viene de la
+  // vista `context` mas cercana en la pila (el picker se apila arriba de ella).
+  const pendingTrackId = useMemo(() => {
+    for (let index = state.stack.length - 1; index >= 0; index--) {
+      const entry = state.stack[index]
+      if (entry?.kind === 'context') return entry.target.trackId ?? null
+    }
+    return null
+  }, [state.stack])
 
   useEffect(() => {
     return window.waverr.library.onScanProgress((progress) => {
@@ -91,7 +106,8 @@ export function useScreen(): ScreenController {
       // mientras carga la nueva, apretar OK rapido activaria la fila vieja.
       setItems([])
       setLoading(true)
-      const next = await buildItems(view, dispatch)
+      setPromptError(null)
+      const next = await buildItems(view, dispatch, pendingTrackId)
       if (!cancelled && token === loadTokenRef.current) {
         setItems(next)
         setLoading(false)
@@ -104,7 +120,7 @@ export function useScreen(): ScreenController {
     }
     // `view` se reconstruye en cada movimiento de seleccion; `viewKey` no.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewKey, revision])
+  }, [viewKey, revision, pendingTrackId])
 
   const activate = useCallback(() => {
     const item = items[selected]
@@ -137,6 +153,42 @@ export function useScreen(): ScreenController {
     [items]
   )
 
+  const confirmPrompt = useCallback(async () => {
+    if (view.kind !== 'prompt') return
+    const value = view.value.trim()
+    if (value.length === 0) return
+
+    const intent = view.intent
+    if (intent.kind === 'newPlaylist') {
+      const playlist = await window.waverr.library.createPlaylist(value)
+      if (!playlist) {
+        setPromptError('YA EXISTE')
+        return
+      }
+      if (intent.trackIdToAdd !== undefined) {
+        await window.waverr.library.addToPlaylist(playlist.id, intent.trackIdToAdd)
+      }
+    } else if (intent.kind === 'renamePlaylist') {
+      if (!(await window.waverr.library.renamePlaylist(intent.playlistId, value))) {
+        setPromptError('YA EXISTE')
+        return
+      }
+    } else {
+      const queue = audioEngine.getQueueView()
+      const trackIds = [queue.now, ...queue.manual, ...queue.upcoming]
+        .filter((track): track is Track => track !== null)
+        .map((track) => track.id)
+      if (!(await window.waverr.library.createPlaylistFromTracks(value, trackIds))) {
+        setPromptError('YA EXISTE')
+        return
+      }
+    }
+
+    setPromptError(null)
+    dispatch({ type: 'confirmPrompt' })
+    setRevision((current) => current + 1)
+  }, [view])
+
   return {
     view,
     title: titleFor(view),
@@ -148,7 +200,9 @@ export function useScreen(): ScreenController {
     activate,
     moveBy,
     toggleFavorite,
-    openContextMenu
+    openContextMenu,
+    confirmPrompt: () => void confirmPrompt(),
+    promptError
   }
 }
 
@@ -206,14 +260,15 @@ const MENU_TITLES: Record<MenuId, string> = {
 
 async function buildItems(
   view: View,
-  dispatch: (action: ScreenAction) => void
+  dispatch: (action: ScreenAction) => void,
+  pendingTrackId: number | null
 ): Promise<ScreenItem[]> {
   switch (view.kind) {
     case 'nowPlaying':
       return []
 
     case 'menu':
-      return buildMenuItems(view.menu, dispatch)
+      return buildMenuItems(view.menu, dispatch, pendingTrackId)
 
     case 'folder': {
       const tracks = await window.waverr.library.search({
@@ -236,8 +291,35 @@ async function buildItems(
     case 'context':
       return buildContextItems(view.target, dispatch)
 
+    case 'playlist': {
+      const entries = await window.waverr.library.listPlaylistTracks(view.playlistId)
+      if (entries.length === 0) return [emptyItem('PLAYLIST VACIA')]
+
+      return entries.map((entry, index) => ({
+        key: `item-${entry.itemId}`,
+        label: `${entry.missing ? '! ' : ''}${displayName(entry)}`,
+        meta: entry.durationMs ? formatTime(entry.durationMs) : entry.ext.slice(1).toUpperCase(),
+        trackId: entry.id,
+        favorite: entry.favorite,
+        contextTarget: {
+          label: displayName(entry),
+          index,
+          origin: 'playlist',
+          trackId: entry.id,
+          playlistId: view.playlistId,
+          itemId: entry.itemId
+        },
+        activate: () => {
+          dispatch({ type: 'openNowPlaying' })
+          // Las perdidas se saltean: no tiene sentido intentar reproducirlas.
+          const playable = entries.filter((candidate) => !candidate.missing)
+          const startIndex = playable.findIndex((candidate) => candidate.itemId === entry.itemId)
+          void audioEngine.playNow(playable, Math.max(0, startIndex))
+        }
+      }))
+    }
+
     case 'queue':
-    case 'playlist':
     case 'prompt':
       return []
   }
@@ -245,7 +327,8 @@ async function buildItems(
 
 async function buildMenuItems(
   menu: string,
-  dispatch: (action: ScreenAction) => void
+  dispatch: (action: ScreenAction) => void,
+  pendingTrackId: number | null
 ): Promise<ScreenItem[]> {
   switch (menu) {
     case 'root':
@@ -288,9 +371,89 @@ async function buildMenuItems(
       return tracks.map(trackItem(tracks, dispatch))
     }
 
-    case 'playlists':
-    case 'playlistPicker':
-      return [emptyItem('VACIO')]
+    case 'playlists': {
+      const playlists = await window.waverr.library.listPlaylists()
+      const items: ScreenItem[] = [
+        {
+          key: 'new',
+          label: '+ NUEVA PLAYLIST',
+          activate: () =>
+            dispatch({
+              type: 'push',
+              view: { kind: 'prompt', label: 'NOMBRE', value: '', intent: { kind: 'newPlaylist' } }
+            })
+        }
+      ]
+
+      for (const playlist of playlists) {
+        items.push({
+          key: `playlist-${playlist.id}`,
+          label: playlist.name.toUpperCase(),
+          meta: String(playlist.trackCount),
+          drillsDown: true,
+          contextTarget: {
+            label: playlist.name,
+            index: 0,
+            origin: 'library',
+            playlistId: playlist.id
+          },
+          activate: () =>
+            dispatch({
+              type: 'push',
+              view: {
+                kind: 'playlist',
+                playlistId: playlist.id,
+                name: playlist.name,
+                selected: 0,
+                moving: null
+              }
+            })
+        })
+      }
+
+      return items
+    }
+
+    case 'playlistPicker': {
+      // Submenu de AGREGAR A PLAYLIST. La pista objetivo viene de la vista
+      // `context` que quedo abajo en la pila.
+      const playlists = await window.waverr.library.listPlaylists()
+      const items: ScreenItem[] = [
+        {
+          key: 'new',
+          label: '+ NUEVA PLAYLIST',
+          activate: () =>
+            dispatch({
+              type: 'push',
+              view: {
+                kind: 'prompt',
+                label: 'NOMBRE',
+                value: '',
+                intent: { kind: 'newPlaylist', trackIdToAdd: pendingTrackId ?? undefined }
+              }
+            })
+        }
+      ]
+
+      for (const playlist of playlists) {
+        items.push({
+          key: `pick-${playlist.id}`,
+          label: playlist.name.toUpperCase(),
+          meta: String(playlist.trackCount),
+          activate: async () => {
+            if (pendingTrackId !== null) {
+              await window.waverr.library.addToPlaylist(playlist.id, pendingTrackId)
+            }
+            // Vuelve a la lista de donde se venia, sin quedar navegando
+            // adentro de la playlist.
+            dispatch({ type: 'back' })
+            dispatch({ type: 'back' })
+          }
+        })
+      }
+
+      return items
+    }
 
     case 'settings': {
       const [roots, stats] = await Promise.all([
@@ -400,6 +563,35 @@ async function buildContextItems(
       label: 'FAVORITO',
       activate: async () => {
         await window.waverr.library.toggleFavorite(trackId)
+        dispatch({ type: 'back' })
+      }
+    })
+  }
+
+  // Fila de una playlist en si misma (no una pista adentro): renombrar y borrar.
+  if (target.playlistId !== undefined && target.trackId === undefined) {
+    const playlistId = target.playlistId
+    items.push({
+      key: 'rename',
+      label: 'RENOMBRAR',
+      activate: () => {
+        dispatch({ type: 'back' })
+        dispatch({
+          type: 'push',
+          view: {
+            kind: 'prompt',
+            label: 'NUEVO NOMBRE',
+            value: '',
+            intent: { kind: 'renamePlaylist', playlistId }
+          }
+        })
+      }
+    })
+    items.push({
+      key: 'delete',
+      label: 'BORRAR PLAYLIST',
+      activate: async () => {
+        await window.waverr.library.deletePlaylist(playlistId)
         dispatch({ type: 'back' })
       }
     })

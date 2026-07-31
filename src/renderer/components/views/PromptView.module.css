@@ -1,0 +1,45 @@
+.view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+}
+
+.label {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--lcd-ink-dim);
+}
+
+.value {
+  font-size: 16px;
+  color: var(--lcd-ink);
+  word-break: break-all;
+}
+
+.caret {
+  animation: promptBlink 1s steps(2, start) infinite;
+}
+
+@keyframes promptBlink {
+  to {
+    visibility: hidden;
+  }
+}
+
+.error {
+  font-size: 10px;
+  color: var(--lcd-ink);
+  background: var(--lcd-ink-dim);
+  padding: 2px 4px;
+  align-self: flex-start;
+}
+
+.hint {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--lcd-ink-dim);
+}
