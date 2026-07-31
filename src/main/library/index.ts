@@ -269,8 +269,12 @@ export class Library {
         .prepare('INSERT INTO playlists (name, created_at, updated_at) VALUES (?, ?, ?)')
         .run(clean, now, now)
       return this.listPlaylists().find((item) => item.id === Number(result.lastInsertRowid)) ?? null
-    } catch {
-      return null
+    } catch (error) {
+      // Solo el nombre repetido es un resultado esperado del negocio. Un error
+      // de otro tipo (SQL roto, tipo invalido) tiene que propagarse: si lo
+      // tragamos aca se ve identico a "nombre repetido" y queda invisible.
+      if (isUniqueViolation(error)) return null
+      throw error
     }
   }
 
@@ -283,8 +287,11 @@ export class Library {
         .prepare('UPDATE playlists SET name = ?, updated_at = ? WHERE id = ?')
         .run(clean, Date.now(), playlistId)
       return result.changes > 0
-    } catch {
-      return false
+    } catch (error) {
+      // Mismo criterio que en createPlaylist: solo el nombre repetido se
+      // silencia, cualquier otro error se relanza.
+      if (isUniqueViolation(error)) return false
+      throw error
     }
   }
 
@@ -309,8 +316,13 @@ export class Library {
       .get(itemId) as { playlist_id: number } | undefined
     if (!row) return
 
-    this.db.prepare('DELETE FROM playlist_items WHERE id = ?').run(itemId)
-    this.renumber(row.playlist_id)
+    // Borrar y renumerar tienen que ser una sola transaccion: si el proceso
+    // se corta entre las dos, queda una posicion salteada y se rompe el
+    // invariante de "posiciones consecutivas desde 0".
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM playlist_items WHERE id = ?').run(itemId)
+      this.renumber(row.playlist_id)
+    })()
     this.touchPlaylist(row.playlist_id)
   }
 
@@ -356,12 +368,33 @@ export class Library {
     this.touchPlaylist(playlistId)
   }
 
+  /**
+   * Crea la playlist y agrega las pistas en una sola transaccion: si algun
+   * trackId no existe, la FK (`foreign_keys = ON`) revienta el INSERT y toda
+   * la transaccion se deshace, incluida la creacion de la playlist. Asi no
+   * queda ni la playlist a medio llenar ni una playlist vacia huerfana.
+   */
   createPlaylistFromTracks(name: string, trackIds: number[]): Playlist | null {
-    const playlist = this.createPlaylist(name)
-    if (!playlist) return null
+    const clean = name.trim()
+    if (clean.length === 0) return null
 
-    for (const trackId of trackIds) this.addToPlaylist(playlist.id, trackId)
-    return this.listPlaylists().find((item) => item.id === playlist.id) ?? null
+    try {
+      const playlistId = this.db.transaction((ids: number[]) => {
+        const now = Date.now()
+        const result = this.db
+          .prepare('INSERT INTO playlists (name, created_at, updated_at) VALUES (?, ?, ?)')
+          .run(clean, now, now)
+        const newId = Number(result.lastInsertRowid)
+
+        for (const trackId of ids) this.addToPlaylist(newId, trackId)
+        return newId
+      })(trackIds)
+
+      return this.listPlaylists().find((item) => item.id === playlistId) ?? null
+    } catch (error) {
+      if (isUniqueViolation(error)) return null
+      throw error
+    }
   }
 
   // --- Ajustes -----------------------------------------------------------
@@ -413,6 +446,22 @@ export class Library {
       return target.startsWith(prefix)
     })
   }
+}
+
+/**
+ * Distingue una violacion de UNIQUE (nombre de playlist repetido) de
+ * cualquier otro error de SQLite. Es la unica clase de fallo que el negocio
+ * espera y quiere silenciar como "false"/"null"; todo lo demas (una consulta
+ * rota, un tipo invalido) tiene que propagarse tal cual, porque si lo
+ * tragamos junto con la violacion de unicidad se ve identico a un simple
+ * nombre repetido y el bug real queda invisible.
+ */
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'SQLITE_CONSTRAINT_UNIQUE'
+  )
 }
 
 function normalizeDir(path: string): string {

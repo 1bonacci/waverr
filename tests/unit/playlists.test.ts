@@ -174,6 +174,19 @@ describe('contenido de una playlist', () => {
       'a.wav'
     ])
   })
+
+  it('un trackId inexistente no deja una playlist a medias', async () => {
+    const library = await setup()
+    const tracks = library.search({ sort: 'name' })
+    const idInexistente = tracks.reduce((max, track) => Math.max(max, track.id), 0) + 1000
+
+    expect(() =>
+      library.createPlaylistFromTracks('rota', [tracks[0]!.id, idInexistente])
+    ).toThrow()
+
+    // Ni la playlist ni sus items sobreviven: todo o nada.
+    expect(library.listPlaylists()).toEqual([])
+  })
 })
 
 describe('settings', () => {
