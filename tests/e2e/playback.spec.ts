@@ -21,7 +21,13 @@ import { createTempLibrary } from '../unit/helpers/audio-fixtures'
 const FIXTURES = [
   'beats/trap/beat_v3.wav',
   'beats/house/loop_128bpm.wav',
-  'demos/idea_140bpm.wav'
+  'demos/idea_140bpm.wav',
+  // Carpeta aparte para el test de COLA: dos pistas propias para armar un
+  // AHORA + LUEGO que no se pisen con las que se encolan a mano (si
+  // compartieran nombre con beat_v3/loop_128bpm, la vista COLA las mostraria
+  // dos veces y los `hasText` de las aserciones dejarian de ser unicos).
+  'upcoming/context_a.wav',
+  'upcoming/context_b.wav'
 ]
 
 /** Los fixtures duran lo suficiente como para observarlos sonando. */
@@ -162,4 +168,74 @@ test('espacio pausa y reanuda', async () => {
 
   await page.keyboard.press('Space')
   await expect(page.getByTestId('screen-status')).toHaveText(PLAYING, { timeout: 10000 })
+})
+
+test('MOVER reordena la cola manual y LUEGO nunca lo ofrece', async () => {
+  const rows = page.getByTestId('screen-row')
+
+  // Cola manual: dos pistas por ENCOLAR AL FINAL, en el orden en que se
+  // encolan (TRAP primero, HOUSE despues).
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'CARPETAS' }).click()
+  await rows.filter({ hasText: 'TRAP' }).click()
+  await expect(rows.first()).toHaveText(/beat_v3/)
+  await rows.first().click({ button: 'right' })
+  await expect(page.getByTestId('screen-title')).toHaveText('ACCIONES')
+  await rows.filter({ hasText: 'ENCOLAR AL FINAL' }).click()
+
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'CARPETAS' }).click()
+  await rows.filter({ hasText: 'HOUSE' }).click()
+  await expect(rows.first()).toHaveText(/loop_128bpm/)
+  await rows.first().click({ button: 'right' })
+  await expect(page.getByTestId('screen-title')).toHaveText('ACCIONES')
+  await rows.filter({ hasText: 'ENCOLAR AL FINAL' }).click()
+
+  // AHORA + LUEGO: un contexto propio de dos pistas (UPCOMING), que no
+  // comparte nombres con lo que se acaba de encolar a mano.
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'CARPETAS' }).click()
+  await rows.filter({ hasText: 'UPCOMING' }).click()
+  await expect(rows.first()).toHaveText(/context_a/)
+  await rows.first().click()
+  await expect(page.getByTestId('now-playing')).toBeVisible()
+
+  // COLA: AHORA=context_a, MANUAL=[beat_v3, loop_128bpm], LUEGO=[context_b].
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'COLA' }).click()
+  await expect(page.getByTestId('screen-title')).toHaveText('COLA')
+  await expect(rows).toHaveCount(4)
+
+  const before = await rows.allTextContents()
+  const beatBefore = before.findIndex((text) => text.includes('beat_v3'))
+  const loopBefore = before.findIndex((text) => text.includes('loop_128bpm'))
+  expect(beatBefore).toBeGreaterThanOrEqual(0)
+  expect(loopBefore).toBeGreaterThan(beatBefore)
+
+  // MOVER: agarrar la primera de la cola manual (beat_v3) y bajarla una
+  // posicion con el teclado, como si arrastrara sobre loop_128bpm.
+  await rows.filter({ hasText: 'beat_v3' }).click({ button: 'right' })
+  await expect(page.getByTestId('screen-title')).toHaveText('ACCIONES')
+  await rows.filter({ hasText: 'MOVER' }).click()
+
+  await expect(page.getByTestId('moving-banner')).toBeVisible()
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await expect(page.getByTestId('moving-banner')).not.toBeVisible()
+  await expect(rows).toHaveCount(4)
+
+  const after = await rows.allTextContents()
+  const beatAfter = after.findIndex((text) => text.includes('beat_v3'))
+  const loopAfter = after.findIndex((text) => text.includes('loop_128bpm'))
+  // Se soltó una fila más abajo: loop_128bpm paso a la punta de la cola
+  // manual y beat_v3 quedo justo despues.
+  expect(loopAfter).toBeLessThan(beatAfter)
+
+  // LUEGO (context_b, lo unico que queda del contexto) nunca ofrece MOVER: ni
+  // siquiera abre el menu contextual, porque esa fila no lleva
+  // `contextTarget` (a diferencia de una fila de la cola manual, que si lo
+  // lleva y por eso recien arriba pudo abrir ACCIONES).
+  await rows.filter({ hasText: 'context_b' }).click({ button: 'right' })
+  await expect(page.getByTestId('screen-title')).toHaveText('COLA')
+  await expect(rows.filter({ hasText: 'MOVER' })).toHaveCount(0)
 })

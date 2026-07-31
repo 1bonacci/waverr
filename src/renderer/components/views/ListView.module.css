@@ -29,11 +29,21 @@
   color: var(--lcd-bg);
 }
 
-/* La fila agarrada en modo mover se marca punteada, se este viendo o no
-   invertida por la seleccion (las dos clases pueden convivir). */
+/* La fila agarrada en modo mover siempre esta tambien seleccionada (el
+   reducer hace `selected: moving.to` en cada paso del arrastre), asi que el
+   punteado se dibuja sobre el fondo invertido de `.rowSelected`
+   (`--lcd-ink`): tiene que ser `--lcd-bg` para no quedar del mismo color
+   que el fondo. Las marcas `^ ... ^` de al lado de la etiqueta son el
+   indicador que no depende de ningun contraste. */
 .rowMoving {
-  outline: 1px dashed var(--lcd-ink);
+  outline: 1px dashed var(--lcd-bg);
   outline-offset: -2px;
+}
+
+.moveMark {
+  flex: 0 0 auto;
+  font-size: 10px;
+  line-height: 1;
 }
 
 .label {

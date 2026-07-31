@@ -83,7 +83,17 @@ function Row({
       {...press}
     >
       {item.favorite && <span className={styles.star}>★</span>}
+      {moving && (
+        <span className={styles.moveMark} aria-hidden="true">
+          ^
+        </span>
+      )}
       <span className={styles.label}>{item.label}</span>
+      {moving && (
+        <span className={styles.moveMark} aria-hidden="true">
+          ^
+        </span>
+      )}
       {item.meta && <span className={styles.meta}>{item.meta}</span>}
       {item.drillsDown && <span className={styles.chevron}>&gt;</span>}
     </button>
