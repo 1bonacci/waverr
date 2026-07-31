@@ -228,9 +228,12 @@ describe('modo mover', () => {
     const state = run([
       { type: 'push', view: queueView },
       { type: 'startMove' },
+      { type: 'moveHeld', delta: 2, itemCount: 4 },
       { type: 'back' }
     ])
-    expect(currentView(state)).toMatchObject({ kind: 'queue', moving: null })
+    // Si `back` confirmara la posicion (delegara en dropMove) en vez de
+    // cancelarla, `selected` quedaria en 3 en lugar de volver a 1.
+    expect(currentView(state)).toMatchObject({ kind: 'queue', moving: null, selected: 1 })
     expect(state.stack).toHaveLength(2)
   })
 
