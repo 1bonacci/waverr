@@ -1,10 +1,9 @@
 /**
- * Navegacion de la pantalla, modelada como pila de vistas igual que un iPod.
+ * Screen navigation, modelled as a stack of views the way an iPod does it.
  *
- * Es una maquina de estados pura: no sabe de React, ni de Electron, ni de la
- * base de datos. Cada vista describe QUE mostrar; los datos los busca el
- * componente. Esto la hace testeable entera y evita que la navegacion se
- * enrede con la carga de datos.
+ * A pure state machine: it knows nothing about React, Electron or the database.
+ * Each view describes WHAT to show; the component fetches the data. That keeps
+ * it fully testable and stops navigation getting tangled up with data loading.
  */
 
 export type MenuId =
@@ -18,28 +17,28 @@ export type MenuId =
   | 'playlistPicker'
   | 'settings'
 
-/** De donde salio la fila sobre la que se abrio el menu contextual. Define
- *  que acciones tienen sentido: solo en la cola y en una playlist se puede
- *  mover o quitar. */
+/** Where the row the context menu was opened on came from. Determines which
+ *  actions make sense: only inside the queue or a playlist can something be
+ *  moved or removed. */
 export type ContextOrigin = 'library' | 'queue' | 'playlist'
 
 export interface ContextTarget {
   label: string
-  /** Posicion dentro de la lista de origen. Solo sirve como referencia
-   *  inicial: si la pista actual cambia con el menu ACCIONES abierto, esta
-   *  posicion queda vieja. MOVER y QUITAR no confian en ella para resolver la
-   *  fila; usan `trackId`/`occurrence` (cola) o `itemId` (playlist), que
-   *  identifican la fila en vez de su posicion. */
+  /** Position within the originating list. Only an initial reference: if the
+   *  current track changes while the ACTIONS menu is open, this position goes
+   *  stale. MOVE and REMOVE do not trust it to resolve the row; they use
+   *  `trackId`/`occurrence` (queue) or `itemId` (playlist), which identify the
+   *  row rather than its position. */
   index: number
   origin: ContextOrigin
   trackId?: number
   playlistId?: number
-  /** Fila de playlist_items, cuando el origen es una playlist. */
+  /** The playlist_items row, when the origin is a playlist. */
   itemId?: number
-  /** Solo cuando `origin` es 'queue': ordinal entre las copias de `trackId`
-   *  en la cola manual (0 = primera), calculado cuando se armo esta fila.
-   *  Encolar la misma pista dos veces esta permitido a proposito, asi que
-   *  `trackId` solo no alcanza para volver a encontrar esta fila despues. */
+  /** Only when `origin` is 'queue': the ordinal among the copies of `trackId`
+   *  in the manual queue (0 = first), computed when this row was built.
+   *  Queueing the same track twice is allowed on purpose, so `trackId` alone
+   *  is not enough to find this row again later. */
   occurrence?: number
 }
 
@@ -48,20 +47,19 @@ export type PromptIntent =
   | { kind: 'renamePlaylist'; playlistId: number }
   | { kind: 'saveQueue' }
 
-/** Fila agarrada en modo mover: de donde salio y donde esta ahora.
- *  `originId` es la identidad de la pista agarrada (su trackId en la cola,
- *  su itemId en una playlist), no su posicion: si la lista se reconstruye
- *  mientras se esta arrastrando (una pista que termina consume la cola
- *  manual y corre los indices de fila), `from`/`to` quedan desactualizados
- *  pero `originId` sigue apuntando a la fila correcta. */
+/** The row held in move mode: where it came from and where it is now.
+ *  `originId` is the identity of the grabbed track (its trackId in the queue,
+ *  its itemId in a playlist), not its position: if the list is rebuilt mid-drag
+ *  (a track ending consumes the manual queue and shifts every row index),
+ *  `from`/`to` go stale but `originId` still points at the right row. */
 export interface MovingState {
   from: number
   to: number
   originId: number
-  /** Ordinal entre las copias que comparten `originId` (0 = primera),
-   *  calculado al agarrar la fila. Encolar la misma pista dos veces esta
-   *  permitido a proposito: sin esto, resolver por identidad siempre caeria
-   *  en la primera copia por trackId, sin importar cual se agarro. */
+  /** Ordinal among the copies sharing `originId` (0 = first), computed when the
+   *  row was grabbed. Queueing the same track twice is allowed on purpose:
+   *  without this, resolving by identity would always land on the first copy by
+   *  trackId, no matter which one was actually grabbed. */
   originOccurrence: number
 }
 
@@ -79,7 +77,8 @@ export interface ScreenState {
 }
 
 export type ScreenAction =
-  /** Mover la seleccion. `itemCount` viene del componente, que es quien sabe cuantas filas hay. */
+  /** Move the selection. `itemCount` comes from the component, which is what
+   *  knows how many rows there are. */
   | { type: 'move'; delta: number; itemCount: number }
   | { type: 'setSelection'; index: number }
   | { type: 'push'; view: View }
@@ -90,9 +89,10 @@ export type ScreenAction =
   | { type: 'backspace' }
   | { type: 'startMove'; originId: number; originOccurrence: number }
   | { type: 'moveHeld'; delta: number; itemCount: number }
-  /** `to`, si viene, fija donde termino el arrastre (clickear una fila con el
-   *  mouse suelta ahi directo, sin pasar por `moveHeld`). Sin `to` usa la
-   *  posicion ya guardada en `moving` (soltar con teclado/rueda). */
+  /** `to`, when present, fixes where the drag ended (clicking a row with the
+   *  mouse drops straight there, without going through `moveHeld`). Without
+   *  `to` it uses the position already stored in `moving` (dropping with the
+   *  keyboard or the wheel). */
   | { type: 'dropMove'; to?: number }
   | { type: 'cancelMove' }
   | { type: 'confirmPrompt' }
@@ -105,7 +105,7 @@ export function currentView(state: ScreenState): View {
   return state.stack[state.stack.length - 1] ?? INITIAL_SCREEN_STATE.stack[0]!
 }
 
-/** Indice seleccionado de la vista actual, o -1 si la vista no es una lista. */
+/** Selected index of the current view, or -1 when the view is not a list. */
 export function currentSelection(state: ScreenState): number {
   const view = currentView(state)
   return view.kind === 'nowPlaying' || view.kind === 'prompt' ? -1 : view.selected
@@ -118,7 +118,7 @@ export function screenReducer(state: ScreenState, action: ScreenAction): ScreenS
     case 'move': {
       if (view.kind === 'nowPlaying' || view.kind === 'prompt') return state
       if (action.itemCount <= 0) return state
-      // Con una fila agarrada, mover la seleccion es arrastrarla.
+      // With a row held, moving the selection means dragging it.
       if ((view.kind === 'queue' || view.kind === 'playlist') && view.moving) {
         return screenReducer(state, {
           type: 'moveHeld',
@@ -126,7 +126,7 @@ export function screenReducer(state: ScreenState, action: ScreenAction): ScreenS
           itemCount: action.itemCount
         })
       }
-      // Se envuelve en los extremos, como la rueda de un iPod.
+      // Wraps around at the ends, like an iPod's wheel.
       const next = (view.selected + action.delta + action.itemCount) % action.itemCount
       return replaceTop(state, { ...view, selected: next })
     }
@@ -141,12 +141,12 @@ export function screenReducer(state: ScreenState, action: ScreenAction): ScreenS
       return { stack: [...state.stack, action.view] }
 
     case 'back': {
-      // Mientras se mueve una fila, MENU cancela el movimiento en vez de
-      // salir de la vista: salir a mitad de un reordenamiento sorprende.
+      // While a row is being moved, MENU cancels the move rather than leaving
+      // the view: leaving halfway through a reorder is surprising.
       if ((view.kind === 'queue' || view.kind === 'playlist') && view.moving) {
         return screenReducer(state, { type: 'cancelMove' })
       }
-      // Nunca se vacia la pila: el menu raiz es el piso.
+      // The stack is never emptied: the root menu is the floor.
       if (state.stack.length <= 1) return state
       return { stack: state.stack.slice(0, -1) }
     }
@@ -163,11 +163,11 @@ export function screenReducer(state: ScreenState, action: ScreenAction): ScreenS
       if (view.kind === 'prompt') {
         return replaceTop(state, { ...view, value: view.value + action.char })
       }
-      // En el menu contextual las letras no hacen nada: es una lista corta de
-      // acciones, no un lugar donde buscar.
+      // Letters do nothing in the context menu: it is a short list of actions,
+      // not somewhere to search.
       if (view.kind === 'context') return state
-      // Tipear en cualquier lado abre la busqueda: es la forma mas rapida de
-      // llegar a un archivo sin recorrer menus.
+      // Typing anywhere opens search: it is the fastest way to reach a file
+      // without walking through menus.
       if (view.kind === 'search') {
         return replaceTop(state, { ...view, query: view.query + action.char, selected: 0 })
       }
@@ -182,7 +182,7 @@ export function screenReducer(state: ScreenState, action: ScreenAction): ScreenS
         return replaceTop(state, { ...view, value: view.value.slice(0, -1) })
       }
       if (view.kind !== 'search') return state
-      // Borrar la ultima letra de una busqueda vacia sale de la busqueda.
+      // Deleting past the last letter of a search leaves the search.
       if (view.query.length === 0) return screenReducer(state, { type: 'back' })
       return replaceTop(state, { ...view, query: view.query.slice(0, -1), selected: 0 })
     }

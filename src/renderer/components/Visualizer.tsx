@@ -7,11 +7,11 @@ export type VisualizerMode = 'bars' | 'scope' | 'ambient'
 
 export const VISUALIZER_MODES: VisualizerMode[] = ['bars', 'scope', 'ambient']
 
-/** Tope de refresco. Es un adorno: no debe pelear CPU con el DAW del usuario. */
+/** Refresh cap. This is decoration: it must not fight the user's DAW for CPU. */
 const TARGET_FPS = 40
 const FRAME_MS = 1000 / TARGET_FPS
 
-/** Bandas del modo barras, agrupadas logaritmicamente. */
+/** Bands of the bars mode, grouped logarithmically. */
 const BAND_COUNT = 24
 
 interface VisualizerProps {
@@ -19,10 +19,10 @@ interface VisualizerProps {
 }
 
 /**
- * Visualizador de la pantalla.
+ * The screen's visualizer.
  *
- * Lee del AnalyserNode del motor y dibuja en un canvas 2D. El bucle se detiene
- * cuando no hay reproduccion o la ventana esta oculta: en reposo no consume.
+ * Reads from the engine's AnalyserNode and draws on a 2D canvas. The loop stops
+ * when nothing is playing or the window is hidden: idle, it costs nothing.
  */
 export function Visualizer({ mode }: VisualizerProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -96,14 +96,14 @@ export function Visualizer({ mode }: VisualizerProps): JSX.Element {
           break
       }
 
-      // Nivel del ultimo cuadro. Lo consumen los tests y sirve para diagnosticar
-      // de un vistazo si el analizador esta recibiendo audio.
+      // Level of the last frame. The tests read it, and it makes it obvious at
+      // a glance whether the analyser is receiving audio.
       canvas.dataset['peak'] = String(peak)
     }
 
     frameRef.current = requestAnimationFrame(draw)
 
-    // Con la ventana minimizada u oculta el bucle no tiene sentido.
+    // With the window minimized or hidden the loop is pointless.
     const onVisibility = (): void => {
       if (document.hidden) {
         cancelAnimationFrame(frameRef.current)
@@ -151,7 +151,8 @@ function readInk(canvas: HTMLCanvasElement): string {
   return getComputedStyle(canvas).getPropertyValue('--lcd-accent').trim() || '#1f6feb'
 }
 
-/** Sin audio: una linea base viva pero quieta, para que la pantalla no parezca rota. */
+/** With no audio: a baseline that is alive but still, so the screen does not
+ *  look broken. */
 function drawIdle(
   context: CanvasRenderingContext2D,
   width: number,
@@ -182,8 +183,8 @@ function drawBars(
   context.fillStyle = ink
 
   for (let band = 0; band < BAND_COUNT; band++) {
-    // Agrupacion logaritmica: reparte el detalle como lo oye el oido, en vez
-    // de dejar 20 barras de agudos casi siempre vacias.
+    // Logarithmic grouping: spreads the detail the way the ear hears it,
+    // instead of leaving 20 treble bars almost always empty.
     const start = binForBand(band, frequency.length)
     const end = Math.max(start + 1, binForBand(band + 1, frequency.length))
 
@@ -192,7 +193,7 @@ function drawBars(
     const level = sum / (end - start) / 255
 
     const previous = peaks[band] ?? 0
-    // Sube al instante, baja despacio: da la sensacion de inercia del hardware.
+    // Rises instantly, falls slowly: gives the sense of hardware inertia.
     const value = level > previous ? level : previous * 0.86
     peaks[band] = value
 
@@ -203,8 +204,8 @@ function drawBars(
 
 function binForBand(band: number, binCount: number): number {
   const ratio = band / BAND_COUNT
-  // Escala exponencial acotada a los primeros ~2/3 del espectro, donde vive
-  // casi toda la energia de la musica.
+  // Exponential scale bounded to the first ~2/3 of the spectrum, where nearly
+  // all of the music's energy lives.
   return Math.floor(Math.pow(ratio, 2.2) * binCount * 0.7)
 }
 
@@ -238,7 +239,7 @@ function drawAmbient(
   frequency: Uint8Array,
   phase: number
 ): void {
-  // Energia de graves: los primeros bins son los que hacen "latir" la imagen.
+  // Bass energy: the first bins are what make the image pulse.
   let bass = 0
   const bassBins = Math.max(1, Math.floor(frequency.length * 0.08))
   for (let bin = 0; bin < bassBins; bin++) bass += frequency[bin] ?? 0
