@@ -69,23 +69,53 @@ export function manualIndexForDrop(rows: QueueRow[], rowIndex: number): number {
 }
 
 /**
+ * Ordinal (0 = primera copia) de la fila en `manualIndex` entre las entradas
+ * de la cola manual que comparten su trackId.
+ *
+ * Encolar la misma pista mas de una vez esta permitido a proposito (`enqueue`
+ * no deduplica), asi que el trackId solo no alcanza para identificar una fila
+ * de forma unica. Este ordinal se calcula en el momento en que la fila esta a
+ * la vista (recien armada, con un `manualIndex` todavia confiable) para poder
+ * volver a encontrarla despues con `resolveManualIndexById`, aunque la lista
+ * se haya reconstruido mientras tanto.
+ */
+export function occurrenceInManual(rows: QueueRow[], manualIndex: number): number {
+  const manualRows = rows.filter(isMovableRow)
+  const target = manualRows[manualIndex]
+  if (!target) return 0
+  return manualRows.slice(0, manualIndex).filter((row) => row.track.id === target.track.id).length
+}
+
+/**
  * Encuentra, por identidad, el indice dentro de la cola manual de la pista
  * `trackId`.
  *
- * Se usa para resolver el origen de un arrastre cuando la lista se
- * reconstruyo mientras se sostenia una fila: si una pista termina durante el
- * movimiento, se consume el primer elemento de la cola manual y todos los
- * indices de fila corren. El indice de fila que se guardo al agarrar la fila
- * deja de servir, pero la identidad de la pista agarrada sigue siendo
- * valida.
+ * Se usa para resolver el origen de un arrastre (o de un QUITAR) cuando la
+ * lista se reconstruyo mientras se sostenia una fila: si una pista termina
+ * durante el movimiento, se consume el primer elemento de la cola manual y
+ * todos los indices de fila corren. El indice de fila que se guardo al
+ * agarrar la fila deja de servir, pero la identidad de la pista agarrada
+ * sigue siendo valida.
+ *
+ * `occurrence` desempata cuando esa pista esta encolada mas de una vez: es el
+ * ordinal calculado con `occurrenceInManual` en el momento en que se agarro
+ * la fila. Si para entonces ya no quedan tantas copias (alguna anterior se
+ * consumio sola mientras tanto), se cae a la ultima copia que quede en vez de
+ * resolver a la primera por default.
  *
  * Devuelve null si esa pista ya no esta en la cola manual (se consumio sola
  * mientras se arrastraba).
  */
-export function resolveManualIndexById(rows: QueueRow[], trackId: number): number | null {
-  const row = rows.find(
+export function resolveManualIndexById(
+  rows: QueueRow[],
+  trackId: number,
+  occurrence: number
+): number | null {
+  const matches = rows.filter(
     (candidate): candidate is Extract<QueueRow, { section: 'manual' }> =>
       candidate.section === 'manual' && candidate.track.id === trackId
   )
-  return row ? row.manualIndex : null
+  if (matches.length === 0) return null
+  const picked = matches[Math.min(Math.max(occurrence, 0), matches.length - 1)]
+  return picked ? picked.manualIndex : null
 }

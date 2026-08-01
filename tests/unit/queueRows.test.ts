@@ -4,6 +4,7 @@ import {
   buildQueueRows,
   isMovableRow,
   manualIndexForDrop,
+  occurrenceInManual,
   resolveManualIndexById,
   type QueueRow
 } from '../../src/renderer/screen/queueRows'
@@ -135,22 +136,84 @@ describe('manualIndexForDrop', () => {
   })
 })
 
+describe('occurrenceInManual', () => {
+  it('sin repetidos, cada fila es la ocurrencia 0', () => {
+    const rows = buildQueueRows({ now, manual: [m0, m1, m2], upcoming: [] })
+    expect(occurrenceInManual(rows, 0)).toBe(0)
+    expect(occurrenceInManual(rows, 1)).toBe(0)
+    expect(occurrenceInManual(rows, 2)).toBe(0)
+  })
+
+  it('con una pista repetida, cuenta cual copia es', () => {
+    // Cola manual [X, Y, X]: encolar la misma pista dos veces esta permitido
+    // a proposito (enqueue no deduplica).
+    const rows = buildQueueRows({ now: null, manual: [m0, m1, m0], upcoming: [] })
+    expect(occurrenceInManual(rows, 0)).toBe(0) // primera copia de m0
+    expect(occurrenceInManual(rows, 1)).toBe(0) // m1, sin repetidos
+    expect(occurrenceInManual(rows, 2)).toBe(1) // segunda copia de m0
+  })
+
+  it('con una pista repetida tres veces, cuenta las tres ocurrencias', () => {
+    const rows = buildQueueRows({ now: null, manual: [m0, m0, m0], upcoming: [] })
+    expect(occurrenceInManual(rows, 0)).toBe(0)
+    expect(occurrenceInManual(rows, 1)).toBe(1)
+    expect(occurrenceInManual(rows, 2)).toBe(2)
+  })
+})
+
 describe('resolveManualIndexById', () => {
-  it('encuentra el indice de manual actual aunque la lista se haya reconstruido', () => {
+  it('sin repetidos, resuelve por trackId sin que la ocurrencia cambie nada', () => {
     // Estado al agarrar la fila: AHORA=now, MANUAL=[m0, m1, m2]. Se agarra m2.
     const before = buildQueueRows({ now, manual: [m0, m1, m2], upcoming: [] })
-    expect(resolveManualIndexById(before, m2.id)).toBe(2)
+    expect(resolveManualIndexById(before, m2.id, occurrenceInManual(before, 2))).toBe(2)
 
     // Mientras se arrastra termina la pista que sonaba: se consume m0 (pasa a
     // ser AHORA) y la cola manual queda mas corta. El indice de fila de m2
     // cambio (de 3 a 2 con AHORA presente), pero su identidad sigue
     // resolviendo al indice de manual correcto.
     const after = buildQueueRows({ now: m0, manual: [m1, m2], upcoming: [] })
-    expect(resolveManualIndexById(after, m2.id)).toBe(1)
+    expect(resolveManualIndexById(after, m2.id, 0)).toBe(1)
   })
 
   it('si la pista agarrada se consumio sola, no hay donde resolverla', () => {
     const rows = buildQueueRows({ now: m0, manual: [m1, m2], upcoming: [] })
-    expect(resolveManualIndexById(rows, m0.id)).toBeNull()
+    expect(resolveManualIndexById(rows, m0.id, 0)).toBeNull()
+  })
+
+  // Regresion: con la cola manual en [X, Y, X], agarrar la tercera fila (la
+  // segunda copia de X) y soltarla resolvia siempre a la PRIMERA coincidencia
+  // por trackId (indice 0), moviendo la copia equivocada. Encolar la misma
+  // pista dos veces esta permitido a proposito, asi que hace falta desempatar
+  // por ocurrencia, no solo por trackId.
+  describe('con la pista repetida, desempata por ocurrencia', () => {
+    it('cola sin repetidos: no cambia nada', () => {
+      const rows = buildQueueRows({ now: null, manual: [m0, m1, m2], upcoming: [] })
+      expect(resolveManualIndexById(rows, m1.id, 0)).toBe(1)
+    })
+
+    it('[X, Y, X]: agarrar la primera copia de X resuelve al indice 0', () => {
+      const rows = buildQueueRows({ now: null, manual: [m0, m1, m0], upcoming: [] })
+      expect(resolveManualIndexById(rows, m0.id, 0)).toBe(0)
+    })
+
+    it('[X, Y, X]: agarrar la segunda copia de X resuelve al indice 2, no al 0', () => {
+      const rows = buildQueueRows({ now: null, manual: [m0, m1, m0], upcoming: [] })
+      expect(resolveManualIndexById(rows, m0.id, 1)).toBe(2)
+    })
+
+    it('pista repetida tres veces: cada ocurrencia resuelve a su propio indice', () => {
+      const rows = buildQueueRows({ now: null, manual: [m0, m0, m0], upcoming: [] })
+      expect(resolveManualIndexById(rows, m0.id, 0)).toBe(0)
+      expect(resolveManualIndexById(rows, m0.id, 1)).toBe(1)
+      expect(resolveManualIndexById(rows, m0.id, 2)).toBe(2)
+    })
+
+    it('si una copia anterior se consumio sola, cae a la ultima copia que quede', () => {
+      // Se agarro la tercera fila de [X, Y, X] (ocurrencia 1). Mientras se
+      // arrastraba, la primera copia de X paso a sonar (AHORA) y salio de la
+      // cola manual: ahora solo queda una copia, la que se agarro.
+      const rows = buildQueueRows({ now: m0, manual: [m1, m0], upcoming: [] })
+      expect(resolveManualIndexById(rows, m0.id, 1)).toBe(1)
+    })
   })
 })

@@ -24,13 +24,22 @@ export type ContextOrigin = 'library' | 'queue' | 'playlist'
 
 export interface ContextTarget {
   label: string
-  /** Posicion dentro de la lista de origen. */
+  /** Posicion dentro de la lista de origen. Solo sirve como referencia
+   *  inicial: si la pista actual cambia con el menu ACCIONES abierto, esta
+   *  posicion queda vieja. MOVER y QUITAR no confian en ella para resolver la
+   *  fila; usan `trackId`/`occurrence` (cola) o `itemId` (playlist), que
+   *  identifican la fila en vez de su posicion. */
   index: number
   origin: ContextOrigin
   trackId?: number
   playlistId?: number
   /** Fila de playlist_items, cuando el origen es una playlist. */
   itemId?: number
+  /** Solo cuando `origin` es 'queue': ordinal entre las copias de `trackId`
+   *  en la cola manual (0 = primera), calculado cuando se armo esta fila.
+   *  Encolar la misma pista dos veces esta permitido a proposito, asi que
+   *  `trackId` solo no alcanza para volver a encontrar esta fila despues. */
+  occurrence?: number
 }
 
 export type PromptIntent =
@@ -48,6 +57,11 @@ export interface MovingState {
   from: number
   to: number
   originId: number
+  /** Ordinal entre las copias que comparten `originId` (0 = primera),
+   *  calculado al agarrar la fila. Encolar la misma pista dos veces esta
+   *  permitido a proposito: sin esto, resolver por identidad siempre caeria
+   *  en la primera copia por trackId, sin importar cual se agarro. */
+  originOccurrence: number
 }
 
 export type View =
@@ -74,7 +88,7 @@ export type ScreenAction =
   | { type: 'openNowPlaying' }
   | { type: 'typeChar'; char: string }
   | { type: 'backspace' }
-  | { type: 'startMove'; originId: number }
+  | { type: 'startMove'; originId: number; originOccurrence: number }
   | { type: 'moveHeld'; delta: number; itemCount: number }
   /** `to`, si viene, fija donde termino el arrastre (clickear una fila con el
    *  mouse suelta ahi directo, sin pasar por `moveHeld`). Sin `to` usa la
@@ -183,7 +197,12 @@ export function screenReducer(state: ScreenState, action: ScreenAction): ScreenS
       if (view.moving) return state
       return replaceTop(state, {
         ...view,
-        moving: { from: view.selected, to: view.selected, originId: action.originId }
+        moving: {
+          from: view.selected,
+          to: view.selected,
+          originId: action.originId,
+          originOccurrence: action.originOccurrence
+        }
       })
     }
 

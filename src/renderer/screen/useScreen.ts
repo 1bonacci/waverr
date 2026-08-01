@@ -3,7 +3,12 @@ import type { ScanProgress, Track } from '@shared/types'
 import { audioEngine } from '../audio/AudioEngine'
 import { formatTime, usePlayback } from '../audio/usePlayback'
 import { startIndexForEntry } from './playlistPlayback'
-import { buildQueueRows, manualIndexForDrop, resolveManualIndexById } from './queueRows'
+import {
+  buildQueueRows,
+  manualIndexForDrop,
+  occurrenceInManual,
+  resolveManualIndexById
+} from './queueRows'
 import {
   currentSelection,
   currentView,
@@ -162,16 +167,18 @@ export function useScreen(): ScreenController {
       const view_ = view
       if ((view_.kind !== 'queue' && view_.kind !== 'playlist') || !view_.moving) return
 
-      const { from, originId } = view_.moving
+      const { from, originId, originOccurrence } = view_.moving
       const to = movableRowCount > 0 ? Math.max(0, Math.min(toIndex, movableRowCount - 1)) : 0
 
       if (view_.kind === 'queue') {
         // La lista pudo reconstruirse mientras se arrastraba (una pista que
         // termina consume la cola manual y corre los indices de fila): el
         // origen se resuelve por la identidad de la pista agarrada
-        // (`originId`), no por el indice de fila que se guardo al empezar.
+        // (`originId` + `originOccurrence`, para desempatar si esta
+        // encolada mas de una vez), no por el indice de fila que se guardo
+        // al empezar.
         const rows = buildQueueRows(audioEngine.getQueueView())
-        const originIndex = resolveManualIndexById(rows, originId)
+        const originIndex = resolveManualIndexById(rows, originId, originOccurrence)
         // Si ya no esta (se consumio sola durante el arrastre) no hay nada
         // que mover: soltar no hace nada distinto de cancelar.
         if (originIndex !== null) {
@@ -451,10 +458,16 @@ async function buildItems(
             contextTarget: {
               label: displayName(row.track),
               // El indice es dentro de la cola manual: es lo que entienden
-              // moveInQueue y removeFromQueue.
+              // moveInQueue y removeFromQueue. Sirve solo de referencia
+              // inicial (ver comentario en ContextTarget): MOVER y QUITAR
+              // resuelven por trackId + occurrence, no por este indice.
               index: manualIndex,
               origin: 'queue',
-              trackId: row.track.id
+              trackId: row.track.id,
+              // Encolar la misma pista dos veces esta permitido a proposito:
+              // este ordinal es lo que permite distinguir esta copia de otra
+              // igual si hay que volver a encontrarla despues.
+              occurrence: occurrenceInManual(rows, manualIndex)
             },
             activate: () => {
               // Saltar directo a un encolado: las que quedaron antes en la
@@ -808,11 +821,13 @@ async function buildContextItems(
         // itemId dentro de una playlist o el trackId dentro de la cola: lo
         // que sigue identificando a esta fila si la lista se reconstruye
         // mientras se esta arrastrando (por ejemplo, una pista que termina y
-        // corre los indices de la cola manual).
+        // corre los indices de la cola manual). `originOccurrence` (0 en
+        // playlist, donde itemId ya es unico) desempata si esa pista esta
+        // encolada mas de una vez.
         const originId = target.origin === 'playlist' ? target.itemId : target.trackId
         if (originId === undefined) return
         dispatch({ type: 'back' })
-        dispatch({ type: 'startMove', originId })
+        dispatch({ type: 'startMove', originId, originOccurrence: target.occurrence ?? 0 })
       }
     })
 
@@ -821,7 +836,16 @@ async function buildContextItems(
       label: 'QUITAR',
       activate: async () => {
         if (target.origin === 'queue') {
-          audioEngine.removeFromQueue(target.index)
+          // No se usa `target.index`: si la pista actual termino con el menu
+          // ACCIONES abierto, ese indice quedo viejo y sacaria la fila
+          // equivocada (justo lo que la invariante de la cola prohibe: nada
+          // que el usuario encolo desaparece salvo que el lo saque). Se
+          // resuelve de nuevo por identidad, igual que MOVER.
+          if (target.trackId !== undefined) {
+            const rows = buildQueueRows(audioEngine.getQueueView())
+            const manualIndex = resolveManualIndexById(rows, target.trackId, target.occurrence ?? 0)
+            if (manualIndex !== null) audioEngine.removeFromQueue(manualIndex)
+          }
         } else if (target.itemId !== undefined) {
           await window.waverr.library.removeFromPlaylist(target.itemId)
         }
