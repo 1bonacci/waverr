@@ -29,6 +29,23 @@
   color: var(--lcd-bg);
 }
 
+/* La fila agarrada en modo mover siempre esta tambien seleccionada (el
+   reducer hace `selected: moving.to` en cada paso del arrastre), asi que el
+   punteado se dibuja sobre el fondo invertido de `.rowSelected`
+   (`--lcd-ink`): tiene que ser `--lcd-bg` para no quedar del mismo color
+   que el fondo. Las marcas `^ ... ^` de al lado de la etiqueta son el
+   indicador que no depende de ningun contraste. */
+.rowMoving {
+  outline: 1px dashed var(--lcd-bg);
+  outline-offset: -2px;
+}
+
+.moveMark {
+  flex: 0 0 auto;
+  font-size: 10px;
+  line-height: 1;
+}
+
 .label {
   flex: 1;
   min-width: 0;
@@ -53,6 +70,17 @@
   flex: 0 0 auto;
   font-size: 10px;
   opacity: 0.6;
+}
+
+/* Rotulo de seccion (AHORA/SIGUIENTE/LUEGO) en la vista COLA: no es una
+   fila, no se selecciona, solo separa visualmente los tres origenes de lo
+   que suena. */
+.sectionHeader {
+  flex: 0 0 auto;
+  padding: 4px 8px 1px;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--lcd-ink-dim);
 }
 
 .empty {

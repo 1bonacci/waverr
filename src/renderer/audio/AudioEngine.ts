@@ -1,8 +1,32 @@
 import { mediaUrlForTrack } from '@shared/media'
 import type { Track } from '@shared/types'
+import {
+  advance,
+  EMPTY_QUEUE,
+  enqueue as enqueueTrack,
+  enqueueNext as enqueueNextTrack,
+  move as moveInQueueState,
+  playNow as playNowState,
+  previous as previousState,
+  queueView,
+  removeAt,
+  setShuffle as setShuffleState,
+  skipToManual as skipToManualState,
+  type QueueState,
+  type QueueView,
+  type RepeatMode
+} from './playbackQueue'
+import { QueuePersistence } from './queuePersistence'
 
 export type PlaybackStatus = 'idle' | 'loading' | 'playing' | 'paused' | 'error'
-export type RepeatMode = 'off' | 'one' | 'all'
+export type { RepeatMode } from './playbackQueue'
+
+/** Clave de `settings` donde se guarda la cola manual. */
+const QUEUE_SETTING_KEY = 'queue'
+
+/** Espera antes de escribir: encolar cinco temas seguidos hace una sola
+ *  escritura, no cinco. */
+const SAVE_DEBOUNCE_MS = 500
 
 export interface PlaybackState {
   track: Track | null
@@ -12,8 +36,10 @@ export interface PlaybackState {
   volume: number
   shuffle: boolean
   repeat: RepeatMode
-  queueLength: number
-  queueIndex: number
+  /** Cuantas pistas encolo el usuario a mano. */
+  manualCount: number
+  /** Cuantas quedan del contexto despues de la actual. */
+  upcomingCount: number
   error: string | null
 }
 
@@ -25,8 +51,8 @@ const INITIAL_STATE: PlaybackState = {
   volume: 0.8,
   shuffle: false,
   repeat: 'off',
-  queueLength: 0,
-  queueIndex: -1,
+  manualCount: 0,
+  upcomingCount: 0,
   error: null
 }
 
@@ -48,15 +74,16 @@ export class AudioEngine {
   private analyser: AnalyserNode | null = null
   private gain: GainNode | null = null
 
-  private queue: Track[] = []
-  /** Orden real de reproduccion: con shuffle es una permutacion de los indices de `queue`. */
-  private order: number[] = []
-  private orderPosition = -1
+  private queue: QueueState = EMPTY_QUEUE
 
   private state: PlaybackState = INITIAL_STATE
   private readonly listeners = new Set<() => void>()
 
+  private persistence: QueuePersistence
+
   constructor() {
+    this.persistence = new QueuePersistence(QUEUE_SETTING_KEY, SAVE_DEBOUNCE_MS)
+
     this.audio = new Audio()
     this.audio.preload = 'metadata'
     // Sin esto el nodo de analisis queda "tainted" y el visualizador ve ceros.
@@ -85,6 +112,8 @@ export class AudioEngine {
       // reporta Infinity hasta que termina de bufferear.
       this.patch({ durationMs: this.state.track?.durationMs ?? fromFile ?? 0 })
     })
+
+    this.persistence.setupUnloadHandler(() => this.flushPendingSave())
   }
 
   // --- Suscripcion (useSyncExternalStore) --------------------------------
@@ -96,31 +125,55 @@ export class AudioEngine {
 
   getState = (): PlaybackState => this.state
 
-  // --- Cola --------------------------------------------------------------
+  // --- Cola -----------------------------------------------------------------
 
   /**
-   * Reemplaza la cola y arranca en `startIndex`.
+   * Reemplaza el contexto y arranca en `startIndex`.
    *
-   * Es la unica forma de empezar a sonar: hasta la busqueda "reproducir esta"
-   * manda la lista de resultados como cola, para que NEXT tenga sentido.
+   * La cola manual no se toca: lo que el usuario encolo a proposito sigue
+   * sonando despues de esto.
    */
-  async setQueue(tracks: Track[], startIndex = 0): Promise<void> {
-    this.queue = tracks
-    this.rebuildOrder(startIndex)
-    await this.playAtOrderPosition(this.orderPosition)
+  async playNow(tracks: Track[], startIndex = 0): Promise<void> {
+    this.queue = playNowState(this.queue, tracks, startIndex)
+    await this.loadCurrent()
   }
 
-  clearQueue(): void {
-    this.queue = []
-    this.order = []
-    this.orderPosition = -1
-    this.audio.pause()
-    this.audio.removeAttribute('src')
-    this.audio.load()
-    this.patch({ ...INITIAL_STATE, volume: this.state.volume })
+  enqueue(track: Track): void {
+    this.queue = enqueueTrack(this.queue, track)
+    this.publishQueue()
   }
 
-  // --- Transporte --------------------------------------------------------
+  enqueueNext(track: Track): void {
+    this.queue = enqueueNextTrack(this.queue, track)
+    this.publishQueue()
+  }
+
+  removeFromQueue(index: number): void {
+    this.queue = removeAt(this.queue, index)
+    this.publishQueue()
+  }
+
+  moveInQueue(from: number, to: number): void {
+    this.queue = moveInQueueState(this.queue, from, to)
+    this.publishQueue()
+  }
+
+  getQueueView(): QueueView {
+    return queueView(this.queue)
+  }
+
+  /**
+   * Salta directo a una pista de la cola manual. Las que quedaron antes de
+   * ella en la cola no se pierden: siguen ahi, listas para sonar despues.
+   */
+  async skipToManual(index: number): Promise<void> {
+    const nextQueue = skipToManualState(this.queue, index)
+    if (nextQueue === this.queue) return
+    this.queue = nextQueue
+    await this.loadCurrent()
+  }
+
+  // --- Transporte -------------------------------------------------------
 
   async play(): Promise<void> {
     if (!this.state.track) return
@@ -150,14 +203,15 @@ export class AudioEngine {
   }
 
   async next(): Promise<void> {
-    if (this.order.length === 0) return
-
-    if (this.orderPosition >= this.order.length - 1) {
-      if (this.state.repeat === 'all') return this.playAtOrderPosition(0)
+    // `advance` con repeat 'one' devuelve el mismo estado: reiniciar es
+    // responsabilidad de handleEnded, no de un NEXT explicito del usuario.
+    const nextState = advance(this.queue, this.state.repeat === 'one' ? 'off' : this.state.repeat)
+    if (!nextState) {
       this.pause()
       return
     }
-    await this.playAtOrderPosition(this.orderPosition + 1)
+    this.queue = nextState
+    await this.loadCurrent()
   }
 
   /** Como un MP3 de verdad: si ya avanzo un poco, PREV reinicia la pista. */
@@ -166,11 +220,13 @@ export class AudioEngine {
       this.seek(0)
       return
     }
-    if (this.orderPosition <= 0) {
+    const previousQueue = previousState(this.queue)
+    if (!previousQueue) {
       this.seek(0)
       return
     }
-    await this.playAtOrderPosition(this.orderPosition - 1)
+    this.queue = previousQueue
+    await this.loadCurrent()
   }
 
   setVolume(volume: number): void {
@@ -180,11 +236,9 @@ export class AudioEngine {
   }
 
   setShuffle(shuffle: boolean): void {
-    if (shuffle === this.state.shuffle) return
+    this.queue = setShuffleState(this.queue, shuffle)
     this.patch({ shuffle })
-    // Se reconstruye el orden manteniendo la pista actual donde esta parada.
-    const currentIndex = this.order[this.orderPosition] ?? 0
-    this.rebuildOrder(currentIndex)
+    this.publishQueue()
   }
 
   cycleRepeat(): RepeatMode {
@@ -232,43 +286,64 @@ export class AudioEngine {
     this.analyser = analyser
   }
 
-  private rebuildOrder(startIndex: number): void {
-    const indices = this.queue.map((_, index) => index)
-
-    if (!this.state.shuffle) {
-      this.order = indices
-      this.orderPosition = clampIndex(startIndex, indices.length)
+  /** Carga en el elemento <audio> lo que el modelo dice que suena ahora. */
+  private async loadCurrent(): Promise<void> {
+    const track = this.queue.current
+    if (!track) {
+      this.patch({ track: null, status: 'idle' })
       return
     }
 
-    const rest = indices.filter((index) => index !== startIndex)
-    shuffleInPlace(rest)
-    this.order = startIndex >= 0 && startIndex < indices.length ? [startIndex, ...rest] : rest
-    this.orderPosition = this.order.length > 0 ? 0 : -1
-  }
-
-  private async playAtOrderPosition(position: number): Promise<void> {
-    if (position < 0 || position >= this.order.length) return
-
-    const queueIndex = this.order[position]
-    if (queueIndex === undefined) return
-    const track = this.queue[queueIndex]
-    if (!track) return
-
-    this.orderPosition = position
     this.patch({
       track,
       status: 'loading',
       positionMs: 0,
       durationMs: track.durationMs ?? 0,
-      queueLength: this.queue.length,
-      queueIndex,
       error: null
     })
+    this.publishQueue()
 
     this.audio.src = mediaUrlForTrack(track.id)
     this.audio.load()
     await this.play()
+  }
+
+  /** Refleja en el estado observable los conteos de la cola. */
+  private publishQueue(): void {
+    const view = queueView(this.queue)
+    this.patch({ manualCount: view.manual.length, upcomingCount: view.upcoming.length })
+    this.persistence.recordMutation()
+    this.persistence.scheduleSave({
+      manualTracks: this.queue.manual,
+      currentTrackId: this.queue.current?.id ?? null
+    })
+  }
+
+  /**
+   * Recupera la cola manual de la sesion anterior.
+   *
+   * El contexto no se guarda: era la vista que estabas mirando y al reabrir la
+   * app esa vista ya no existe. Los ids que ya no estan en el indice se
+   * descartan en silencio.
+   *
+   * Es idempotente: en StrictMode React monta dos veces, esto solo restaura una.
+   * Si la cola fue mutada durante la restauracion, la mutacion gana.
+   */
+  async restore(): Promise<void> {
+    const restored = await this.persistence.restore()
+    if (!restored) return
+
+    this.queue = { ...this.queue, manual: restored.manualTracks }
+    // Se publica sin reprogramar el guardado: restaurar no es un cambio.
+    const view = queueView(this.queue)
+    this.patch({ manualCount: view.manual.length, upcomingCount: view.upcoming.length })
+  }
+
+  private flushPendingSave(): void {
+    this.persistence.flushPendingSave({
+      manualTracks: this.queue.manual,
+      currentTrackId: this.queue.current?.id ?? null
+    })
   }
 
   private handleEnded(): void {
@@ -294,21 +369,6 @@ export class AudioEngine {
   private patch(partial: Partial<PlaybackState>): void {
     this.state = { ...this.state, ...partial }
     for (const listener of this.listeners) listener()
-  }
-}
-
-function clampIndex(index: number, length: number): number {
-  if (length === 0) return -1
-  return Math.max(0, Math.min(index, length - 1))
-}
-
-function shuffleInPlace<T>(items: T[]): void {
-  for (let i = items.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    const a = items[i]!
-    const b = items[j]!
-    items[i] = b
-    items[j] = a
   }
 }
 

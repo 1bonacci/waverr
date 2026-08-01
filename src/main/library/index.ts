@@ -4,6 +4,8 @@ import type { Database as SqliteDatabase } from 'better-sqlite3'
 import type {
   FolderEntry,
   LibraryStats,
+  Playlist,
+  PlaylistEntry,
   Root,
   ScanProgress,
   ScanResult,
@@ -229,6 +231,205 @@ export class Library {
     }
   }
 
+  // --- Playlists ---------------------------------------------------------
+
+  listPlaylists(): Playlist[] {
+    const rows = this.db
+      .prepare(
+        `SELECT p.id, p.name, p.created_at, p.updated_at,
+                (SELECT COUNT(*) FROM playlist_items i WHERE i.playlist_id = p.id) AS track_count
+           FROM playlists p
+          ORDER BY p.name COLLATE NOCASE ASC`
+      )
+      .all() as Array<{
+      id: number
+      name: string
+      created_at: number
+      updated_at: number
+      track_count: number
+    }>
+
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      trackCount: row.track_count,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    }))
+  }
+
+  /** Devuelve null si el nombre ya esta ocupado (la comparacion ignora mayusculas). */
+  createPlaylist(name: string): Playlist | null {
+    const clean = name.trim()
+    if (clean.length === 0) return null
+
+    const now = Date.now()
+    try {
+      const result = this.db
+        .prepare('INSERT INTO playlists (name, created_at, updated_at) VALUES (?, ?, ?)')
+        .run(clean, now, now)
+      return this.listPlaylists().find((item) => item.id === Number(result.lastInsertRowid)) ?? null
+    } catch (error) {
+      // Solo el nombre repetido es un resultado esperado del negocio. Un error
+      // de otro tipo (SQL roto, tipo invalido) tiene que propagarse: si lo
+      // tragamos aca se ve identico a "nombre repetido" y queda invisible.
+      if (isUniqueViolation(error)) return null
+      throw error
+    }
+  }
+
+  renamePlaylist(playlistId: number, name: string): boolean {
+    const clean = name.trim()
+    if (clean.length === 0) return false
+
+    try {
+      const result = this.db
+        .prepare('UPDATE playlists SET name = ?, updated_at = ? WHERE id = ?')
+        .run(clean, Date.now(), playlistId)
+      return result.changes > 0
+    } catch (error) {
+      // Mismo criterio que en createPlaylist: solo el nombre repetido se
+      // silencia, cualquier otro error se relanza.
+      if (isUniqueViolation(error)) return false
+      throw error
+    }
+  }
+
+  deletePlaylist(playlistId: number): void {
+    this.db.prepare('DELETE FROM playlists WHERE id = ?').run(playlistId)
+  }
+
+  addToPlaylist(playlistId: number, trackId: number): void {
+    const next = this.db
+      .prepare('SELECT COALESCE(MAX(position) + 1, 0) AS next FROM playlist_items WHERE playlist_id = ?')
+      .get(playlistId) as { next: number }
+
+    this.db
+      .prepare('INSERT INTO playlist_items (playlist_id, track_id, position) VALUES (?, ?, ?)')
+      .run(playlistId, trackId, next.next)
+    this.touchPlaylist(playlistId)
+  }
+
+  removeFromPlaylist(itemId: number): void {
+    const row = this.db
+      .prepare('SELECT playlist_id FROM playlist_items WHERE id = ?')
+      .get(itemId) as { playlist_id: number } | undefined
+    if (!row) return
+
+    // Borrar y renumerar tienen que ser una sola transaccion: si el proceso
+    // se corta entre las dos, queda una posicion salteada y se rompe el
+    // invariante de "posiciones consecutivas desde 0".
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM playlist_items WHERE id = ?').run(itemId)
+      this.renumber(row.playlist_id)
+    })()
+    this.touchPlaylist(row.playlist_id)
+  }
+
+  /** Incluye las pistas perdidas: el disco externo puede volver a aparecer. */
+  listPlaylistTracks(playlistId: number): PlaylistEntry[] {
+    const rows = this.db
+      .prepare(
+        `SELECT ${TRACK_COLUMNS}, i.id AS item_id, i.position AS item_position
+           FROM playlist_items i
+           JOIN tracks t ON t.id = i.track_id
+           LEFT JOIN marks m ON m.track_id = t.id
+          WHERE i.playlist_id = ?
+          ORDER BY i.position ASC`
+      )
+      .all(playlistId) as Array<TrackRow & { item_id: number; item_position: number }>
+
+    return rows.map((row) => ({
+      ...rowToTrack(row),
+      itemId: row.item_id,
+      position: row.item_position
+    }))
+  }
+
+  /** Satura en los extremos, igual que el modelo de la cola. */
+  movePlaylistItem(playlistId: number, from: number, to: number): void {
+    const ids = this.db
+      .prepare('SELECT id FROM playlist_items WHERE playlist_id = ? ORDER BY position ASC')
+      .all(playlistId) as Array<{ id: number }>
+
+    if (from < 0 || from >= ids.length) return
+    const target = Math.max(0, Math.min(to, ids.length - 1))
+    if (target === from) return
+
+    const [moved] = ids.splice(from, 1)
+    if (!moved) return
+    ids.splice(target, 0, moved)
+
+    const update = this.db.prepare('UPDATE playlist_items SET position = ? WHERE id = ?')
+    this.db.transaction((ordered: Array<{ id: number }>) => {
+      ordered.forEach((item, index) => update.run(index, item.id))
+    })(ids)
+
+    this.touchPlaylist(playlistId)
+  }
+
+  /**
+   * Crea la playlist y agrega las pistas en una sola transaccion: si algun
+   * trackId no existe, la FK (`foreign_keys = ON`) revienta el INSERT y toda
+   * la transaccion se deshace, incluida la creacion de la playlist. Asi no
+   * queda ni la playlist a medio llenar ni una playlist vacia huerfana.
+   */
+  createPlaylistFromTracks(name: string, trackIds: number[]): Playlist | null {
+    const clean = name.trim()
+    if (clean.length === 0) return null
+
+    try {
+      const playlistId = this.db.transaction((ids: number[]) => {
+        const now = Date.now()
+        const result = this.db
+          .prepare('INSERT INTO playlists (name, created_at, updated_at) VALUES (?, ?, ?)')
+          .run(clean, now, now)
+        const newId = Number(result.lastInsertRowid)
+
+        for (const trackId of ids) this.addToPlaylist(newId, trackId)
+        return newId
+      })(trackIds)
+
+      return this.listPlaylists().find((item) => item.id === playlistId) ?? null
+    } catch (error) {
+      if (isUniqueViolation(error)) return null
+      throw error
+    }
+  }
+
+  // --- Ajustes -----------------------------------------------------------
+
+  getSetting(key: string): string | null {
+    const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+      | { value: string }
+      | undefined
+    return row?.value ?? null
+  }
+
+  setSetting(key: string, value: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO settings (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+      )
+      .run(key, value)
+  }
+
+  private renumber(playlistId: number): void {
+    const ids = this.db
+      .prepare('SELECT id FROM playlist_items WHERE playlist_id = ? ORDER BY position ASC')
+      .all(playlistId) as Array<{ id: number }>
+
+    const update = this.db.prepare('UPDATE playlist_items SET position = ? WHERE id = ?')
+    this.db.transaction(() => {
+      ids.forEach((item, index) => update.run(index, item.id))
+    })()
+  }
+
+  private touchPlaylist(playlistId: number): void {
+    this.db.prepare('UPDATE playlists SET updated_at = ? WHERE id = ?').run(Date.now(), playlistId)
+  }
+
   /**
    * Comprueba que una ruta pertenezca a alguna raiz registrada.
    *
@@ -245,6 +446,18 @@ export class Library {
       return target.startsWith(prefix)
     })
   }
+}
+
+/**
+ * Distingue una violacion de UNIQUE (nombre de playlist repetido) de
+ * cualquier otro error de SQLite. Es la unica clase de fallo que el negocio
+ * espera y quiere silenciar como "false"/"null"; todo lo demas (una consulta
+ * rota, un tipo invalido) tiene que propagarse tal cual, porque si lo
+ * tragamos junto con la violacion de unicidad se ve identico a un simple
+ * nombre repetido y el bug real queda invisible.
+ */
+function isUniqueViolation(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'SQLITE_CONSTRAINT_UNIQUE'
 }
 
 function normalizeDir(path: string): string {

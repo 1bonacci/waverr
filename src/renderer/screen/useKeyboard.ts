@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { audioEngine } from '../audio/AudioEngine'
 import { useUiStore } from '../store/ui'
 import type { ScreenController } from './useScreen'
@@ -11,6 +11,10 @@ const SEEK_STEP_MS = 5000
  * fisico equivalente, asi que se puede usar waverr entero sin tocar el mouse.
  */
 export function useKeyboardControls(controller: ScreenController): void {
+  // Marca si la repeticion de Enter ya disparo el menu contextual, para no
+  // abrirlo de nuevo en cada tick de autorepeat mientras se mantiene apretado.
+  const longPressFired = useRef(false)
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       const { key, ctrlKey, altKey, metaKey } = event
@@ -35,6 +39,21 @@ export function useKeyboardControls(controller: ScreenController): void {
           return
         case 'Enter':
           event.preventDefault()
+          // En el prompt, Enter confirma el texto en vez de activar una fila:
+          // no hay lista, ni tiene sentido el menu contextual sobre autorepeat.
+          if (controller.view.kind === 'prompt') {
+            if (!event.repeat) controller.confirmPrompt()
+            return
+          }
+          // Mantener Enter dispara autorepeat: la primera repeticion es el
+          // equivalente de teclado a mantener OK apretado.
+          if (event.repeat) {
+            if (!longPressFired.current) {
+              longPressFired.current = true
+              controller.openContextMenu(controller.selected)
+            }
+            return
+          }
           controller.activate()
           return
         case 'Escape':
@@ -43,13 +62,23 @@ export function useKeyboardControls(controller: ScreenController): void {
           return
         case 'Backspace':
           event.preventDefault()
-          // Dentro de la busqueda borra una letra; en el resto es "atras".
+          // Dentro de la busqueda o el prompt borra una letra (y el propio
+          // reducer cierra la vista si ya no queda nada que borrar); en el
+          // resto es "atras".
           controller.dispatch(
-            controller.view.kind === 'search' ? { type: 'backspace' } : { type: 'back' }
+            controller.view.kind === 'search' || controller.view.kind === 'prompt'
+              ? { type: 'backspace' }
+              : { type: 'back' }
           )
           return
         case ' ':
           event.preventDefault()
+          // En el prompt el espacio es un caracter mas del nombre (playlists
+          // como "Musica de auto" lo necesitan); en el resto pausa/reanuda.
+          if (controller.view.kind === 'prompt') {
+            controller.dispatch({ type: 'typeChar', char: ' ' })
+            return
+          }
           void audioEngine.toggle()
           return
         case 'ArrowLeft':
@@ -68,9 +97,9 @@ export function useKeyboardControls(controller: ScreenController): void {
           return
       }
 
-      // V y F son atajos solo fuera de la busqueda: mientras se filtra, esas
-      // letras le pertenecen al texto.
-      if (controller.view.kind !== 'search') {
+      // V y F son atajos solo fuera de la busqueda y del prompt: mientras se
+      // filtra o se escribe un nombre, esas letras le pertenecen al texto.
+      if (controller.view.kind !== 'search' && controller.view.kind !== 'prompt') {
         if (key === 'v' || key === 'V') {
           event.preventDefault()
           useUiStore.getState().cycleVisualizer()
@@ -90,7 +119,26 @@ export function useKeyboardControls(controller: ScreenController): void {
       }
     }
 
+    const onKeyUp = (event: KeyboardEvent): void => {
+      if (event.key === 'Enter') longPressFired.current = false
+    }
+
+    // Si la ventana pierde el foco con Enter mantenido (alt-tab, click en
+    // otra ventana, DevTools), el keyup de Enter puede no llegar nunca y el
+    // flag queda pegado en true: a partir de ahi mantener Enter no volveria
+    // a abrir el menu contextual. El blur es la senal de que ya no hay
+    // garantia de recibir ese keyup, asi que resetea el flag por las dudas.
+    const onBlur = (): void => {
+      longPressFired.current = false
+    }
+
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onBlur)
+    }
   }, [controller])
 }

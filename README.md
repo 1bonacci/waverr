@@ -18,12 +18,13 @@ entero con el mouse.
 | Tecla | Accion |
 |---|---|
 | `↑` `↓` | mover la seleccion (o scroll del mouse sobre la rueda) |
-| `Enter` | entrar / reproducir |
-| `Esc` | atras |
-| `Backspace` | borrar letra en la busqueda; atras en el resto |
-| `Espacio` | reproducir / pausar |
+| `Enter` | entrar / reproducir (confirma el texto en el prompt) |
+| `Enter` mantenido | menu contextual sobre la fila (o click derecho con el mouse) |
+| `Esc` | atras (cancela el modo mover si hay una fila agarrada) |
+| `Backspace` | borrar letra en la busqueda o en el prompt de texto; atras en el resto |
+| `Espacio` | reproducir / pausar (en el prompt de texto, escribe un espacio) |
 | `←` `→` | pista anterior / siguiente (mantener: rebobinar 5 s) |
-| letras y numeros | abre la busqueda y filtra en vivo |
+| letras y numeros | abre la busqueda y filtra en vivo (en el prompt de texto, escriben el nombre) |
 | `F` | marcar favorito |
 | `V` | cambiar modo de visualizador |
 | `Home` | volver al menu raiz |
@@ -34,6 +35,19 @@ funciona a los pocos segundos) y despues tags y duracion.
 
 Un archivo que desaparece del disco no se borra del indice: queda marcado como
 perdido y conserva sus favoritos por si el disco externo vuelve a montarse.
+
+El menu contextual (OK mantenido o click derecho) ofrece `REPRODUCIR AHORA`,
+`ENCOLAR SIGUIENTE`, `ENCOLAR AL FINAL`, `AGREGAR A PLAYLIST` y `FAVORITO`
+sobre cualquier pista; dentro de la `COLA` o de una playlist suma `MOVER` y
+`QUITAR`. Al elegir `MOVER` la fila queda agarrada: las flechas la arrastran,
+`Enter` la suelta en el lugar y `Esc` cancela el reordenamiento.
+
+`COLA` muestra lo que suena ahora, lo encolado a mano y lo que sigue del
+contexto de reproduccion; elegir otro tema para reproducir no borra lo
+encolado a mano, que se mantiene hasta que le toque sonar. `GUARDAR COMO
+PLAYLIST`, al final de esa vista, convierte toda la cola (lo que suena, lo
+encolado y lo que sigue) en una playlist nueva: una sesion de escucha que
+resulto buena pasa a ser algo que dura.
 
 ## Desarrollo
 
