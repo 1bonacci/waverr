@@ -3,16 +3,16 @@ import { audioEngine } from '../audio/AudioEngine'
 import { useUiStore } from '../store/ui'
 import type { ScreenController } from './useScreen'
 
-/** Cuanto rebobina/adelanta al mantener PREV o NEXT apretados. */
+/** How far holding PREV or NEXT seeks on each repeat. */
 const SEEK_STEP_MS = 5000
 
 /**
- * Teclado del aparato. Cada tecla hace exactamente lo que haria el boton
- * fisico equivalente, asi que se puede usar waverr entero sin tocar el mouse.
+ * Keyboard for the device. Every key does exactly what the equivalent physical
+ * button would, so waverr can be used end to end without touching the mouse.
  */
 export function useKeyboardControls(controller: ScreenController): void {
-  // Marca si la repeticion de Enter ya disparo el menu contextual, para no
-  // abrirlo de nuevo en cada tick de autorepeat mientras se mantiene apretado.
+  // Tracks whether the Enter autorepeat already opened the context menu, so it
+  // is not reopened on every autorepeat tick while the key stays held.
   const longPressFired = useRef(false)
 
   useEffect(() => {
@@ -39,14 +39,14 @@ export function useKeyboardControls(controller: ScreenController): void {
           return
         case 'Enter':
           event.preventDefault()
-          // En el prompt, Enter confirma el texto en vez de activar una fila:
-          // no hay lista, ni tiene sentido el menu contextual sobre autorepeat.
+          // In a prompt, Enter confirms the text instead of activating a row:
+          // there is no list, and a context menu on autorepeat makes no sense.
           if (controller.view.kind === 'prompt') {
             if (!event.repeat) controller.confirmPrompt()
             return
           }
-          // Mantener Enter dispara autorepeat: la primera repeticion es el
-          // equivalente de teclado a mantener OK apretado.
+          // Holding Enter triggers autorepeat: the first repeat is the keyboard
+          // equivalent of holding OK down.
           if (event.repeat) {
             if (!longPressFired.current) {
               longPressFired.current = true
@@ -62,9 +62,9 @@ export function useKeyboardControls(controller: ScreenController): void {
           return
         case 'Backspace':
           event.preventDefault()
-          // Dentro de la busqueda o el prompt borra una letra (y el propio
-          // reducer cierra la vista si ya no queda nada que borrar); en el
-          // resto es "atras".
+          // Inside search or a prompt it deletes a letter (and the reducer
+          // itself closes the view when there is nothing left to delete);
+          // everywhere else it means "back".
           controller.dispatch(
             controller.view.kind === 'search' || controller.view.kind === 'prompt'
               ? { type: 'backspace' }
@@ -73,8 +73,8 @@ export function useKeyboardControls(controller: ScreenController): void {
           return
         case ' ':
           event.preventDefault()
-          // En el prompt el espacio es un caracter mas del nombre (playlists
-          // como "Musica de auto" lo necesitan); en el resto pausa/reanuda.
+          // In a prompt, space is just another character of the name (a
+          // playlist called "Car music" needs it); elsewhere it pauses/resumes.
           if (controller.view.kind === 'prompt') {
             controller.dispatch({ type: 'typeChar', char: ' ' })
             return
@@ -97,8 +97,8 @@ export function useKeyboardControls(controller: ScreenController): void {
           return
       }
 
-      // V y F son atajos solo fuera de la busqueda y del prompt: mientras se
-      // filtra o se escribe un nombre, esas letras le pertenecen al texto.
+      // V and F are shortcuts only outside search and prompts: while filtering
+      // or typing a name, those letters belong to the text.
       if (controller.view.kind !== 'search' && controller.view.kind !== 'prompt') {
         if (key === 'v' || key === 'V') {
           event.preventDefault()
@@ -112,7 +112,7 @@ export function useKeyboardControls(controller: ScreenController): void {
         }
       }
 
-      // Cualquier caracter imprimible abre la busqueda y filtra en vivo.
+      // Any printable character opens search and filters live.
       if (key.length === 1 && key !== ' ') {
         event.preventDefault()
         controller.dispatch({ type: 'typeChar', char: key })
@@ -123,11 +123,11 @@ export function useKeyboardControls(controller: ScreenController): void {
       if (event.key === 'Enter') longPressFired.current = false
     }
 
-    // Si la ventana pierde el foco con Enter mantenido (alt-tab, click en
-    // otra ventana, DevTools), el keyup de Enter puede no llegar nunca y el
-    // flag queda pegado en true: a partir de ahi mantener Enter no volveria
-    // a abrir el menu contextual. El blur es la senal de que ya no hay
-    // garantia de recibir ese keyup, asi que resetea el flag por las dudas.
+    // If the window loses focus with Enter held (alt-tab, a click on another
+    // window, DevTools), the Enter keyup may never arrive and the flag stays
+    // stuck at true: from then on, holding Enter would no longer open the
+    // context menu. A blur is the signal that the keyup is no longer
+    // guaranteed, so reset the flag just in case.
     const onBlur = (): void => {
       longPressFired.current = false
     }
