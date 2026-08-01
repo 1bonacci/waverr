@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, type PointerEvent } from 'react'
 
-/** Cuanto hay que mantener OK para que aparezca el menu contextual. */
+/** How long OK has to be held for the context menu to appear. */
 export const LONG_PRESS_MS = 450
 
 interface LongPressHandlers {
@@ -10,10 +10,10 @@ interface LongPressHandlers {
 }
 
 /**
- * Distingue un click de un OK mantenido sobre la misma fila.
+ * Tells a click apart from a held OK on the same row.
  *
- * Si se suelta antes del umbral corre `onPress`; si se pasa, corre
- * `onLongPress` y el `onPress` posterior queda anulado.
+ * Released before the threshold runs `onPress`; held past it runs `onLongPress`
+ * and cancels the `onPress` that would otherwise follow.
  */
 export function useLongPress(onPress: () => void, onLongPress: () => void): LongPressHandlers {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -26,18 +26,18 @@ export function useLongPress(onPress: () => void, onLongPress: () => void): Long
     }
   }, [])
 
-  // useScreen reemplaza `items` por [] en cada cambio de vista, asi que la
-  // fila entera se desmonta al navegar. Si eso pasa con el puntero todavia
-  // apretado, el timeout de mas arriba sigue vivo y a los 450ms dispara
-  // `onLongPress` con el `index`/`controller` de un render que ya no existe,
-  // abriendo el menu contextual sobre la fila o pantalla equivocada. Este
-  // efecto cancela ese timer al desmontar para que eso no pueda pasar.
+  // useScreen replaces `items` with [] on every view change, so the whole row
+  // unmounts when navigating. If that happens with the pointer still held, the
+  // timeout above stays alive and 450ms later fires `onLongPress` with the
+  // `index`/`controller` of a render that no longer exists, opening the context
+  // menu over the wrong row or the wrong screen. This effect cancels that timer
+  // on unmount so it cannot happen.
   useEffect(() => clear, [clear])
 
   return {
-    // Solo el boton primario (izquierdo, o el toque) cuenta como press: el
-    // derecho ya tiene su propio significado (abre el menu contextual via
-    // el evento nativo `contextmenu`) y no tiene que ademas activar la fila.
+    // Only the primary button (left, or a touch) counts as a press: the right
+    // button already has its own meaning (it opens the context menu through the
+    // native `contextmenu` event) and must not also activate the row.
     onPointerDown: useCallback(
       (event: PointerEvent) => {
         if (event.button !== 0) return

@@ -7,7 +7,7 @@ interface QueueViewProps {
   controller: ScreenController
 }
 
-/** COLA y PLAYLIST comparten esta cascara: ambas pueden entrar en modo mover. */
+/** QUEUE and PLAYLIST share this shell: both can enter move mode. */
 export function QueueView({ controller }: QueueViewProps): JSX.Element {
   const view = controller.view
   const moving = view.kind === 'queue' || view.kind === 'playlist' ? view.moving : null

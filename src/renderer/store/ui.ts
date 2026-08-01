@@ -7,8 +7,8 @@ interface UiState {
 }
 
 /**
- * Estado de la carcasa que no pertenece ni al motor de audio ni a la
- * navegacion: por ahora, cual visual esta activo.
+ * Device state that belongs to neither the audio engine nor the navigation:
+ * for now, which visualizer is active.
  */
 export const useUiStore = create<UiState>((set) => ({
   visualizerMode: 'bars',

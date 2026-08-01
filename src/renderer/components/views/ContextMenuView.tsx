@@ -9,8 +9,8 @@ interface ContextMenuViewProps {
   target: ContextTarget
 }
 
-/** Acciones sobre una fila. Arriba se repite sobre que pista se esta actuando,
- *  porque el menu tapa la lista de donde salio. */
+/** Actions on a row. The track being acted on is repeated at the top, because
+ *  the menu covers the list it came from. */
 export function ContextMenuView({ controller, target }: ContextMenuViewProps): JSX.Element {
   return (
     <div className={styles.view}>

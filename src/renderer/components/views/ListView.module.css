@@ -78,9 +78,8 @@
   opacity: 0.6;
 }
 
-/* Rotulo de seccion (AHORA/SIGUIENTE/LUEGO) en la vista COLA: no es una
-   fila, no se selecciona, solo separa visualmente los tres origenes de lo
-   que suena. */
+/* Section header (NOW/NEXT UP/LATER) in the QUEUE view: not a row, not
+   selectable, it only separates the three origins of what plays. */
 .sectionHeader {
   flex: 0 0 auto;
   padding: 4px 8px 1px;

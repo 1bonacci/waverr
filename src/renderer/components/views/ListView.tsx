@@ -8,18 +8,18 @@ interface ListViewProps {
 }
 
 /**
- * Lista generica de la pantalla. Sirve para menus, carpetas, resultados de
- * busqueda y ajustes: todos llegan aca como `ScreenItem[]`.
+ * The screen's generic list. Used for menus, tracks, search results and
+ * settings alike: they all arrive here as `ScreenItem[]`.
  */
 export function ListView({ controller }: ListViewProps): JSX.Element {
   const { items, selected, loading, view } = controller
   const selectedRef = useRef<HTMLButtonElement>(null)
 
-  // La fila agarrada en modo mover, si la hay: solo existe en COLA y PLAYLIST.
+  // The row held in move mode, if any: only exists in QUEUE and PLAYLIST.
   const movingTo =
     (view.kind === 'queue' || view.kind === 'playlist') && view.moving ? view.moving.to : null
 
-  // La fila seleccionada se mantiene visible cuando se navega con el teclado.
+  // Keeps the selected row visible while navigating with the keyboard.
   useEffect(() => {
     selectedRef.current?.scrollIntoView({ block: 'nearest' })
   }, [selected, items])
@@ -64,10 +64,10 @@ function Row({
   controller: ScreenController
   rowRef?: RefObject<HTMLButtonElement | null>
 }): JSX.Element {
-  // Con una fila agarrada en modo mover, clickear cualquier fila la suelta
-  // ahi en vez de activarla: activar una fila de la cola manual mientras se
-  // esta moviendo corria (y mutilaba) la cola, porque `item.activate()` no
-  // sabe nada de que hay un arrastre en curso.
+  // With a row held in move mode, clicking any row drops it there instead of
+  // activating it: activating a manual queue row mid-move used to shift (and
+  // mangle) the queue, because `item.activate()` knows nothing about a drag
+  // being in progress.
   const { view } = controller
   const isMoving = (view.kind === 'queue' || view.kind === 'playlist') && view.moving !== null
 

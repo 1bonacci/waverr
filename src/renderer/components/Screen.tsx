@@ -13,8 +13,8 @@ interface ScreenProps {
 }
 
 /**
- * Pantalla LCD. Todo lo que el usuario ve vive aca adentro: no hay paneles
- * fuera del aparato.
+ * The LCD screen. Everything the user sees lives in here: there are no panels
+ * outside the device.
  */
 export function Screen({ controller }: ScreenProps): JSX.Element {
   const playback = usePlayback()

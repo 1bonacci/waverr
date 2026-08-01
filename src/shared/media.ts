@@ -1,9 +1,9 @@
 /**
- * Reglas del protocolo de medios `waverr://`.
+ * Rules of the `waverr://` media protocol.
  *
- * Modulo puro y sin dependencias de Node ni de Electron: lo importan tanto el
- * main (que sirve los archivos) como el renderer (que arma las URL), y ademas
- * se puede testear solo.
+ * A pure module with no Node or Electron dependencies: it is imported both by
+ * the main process (which serves the files) and by the renderer (which builds
+ * the URLs), and it can be tested on its own.
  */
 
 export const MEDIA_SCHEME = 'waverr'
@@ -22,8 +22,8 @@ const MIME_TYPES: Record<string, string> = {
 }
 
 /**
- * Tipo MIME por extension. Chromium elige el decodificador con esto, asi que
- * mandar el tipo correcto es lo que hace la diferencia entre reproducir y no.
+ * MIME type by extension. Chromium picks the decoder from this, so sending the
+ * right type is the difference between playing and not playing.
  */
 export function mimeTypeFor(filePath: string): string {
   const dot = filePath.lastIndexOf('.')
@@ -31,12 +31,12 @@ export function mimeTypeFor(filePath: string): string {
   return MIME_TYPES[filePath.slice(dot + 1).toLowerCase()] ?? 'application/octet-stream'
 }
 
-/** URL que el renderer le pasa al elemento <audio>. */
+/** The URL the renderer hands to the <audio> element. */
 export function mediaUrlForTrack(trackId: number): string {
   return `${MEDIA_SCHEME}://track/${trackId}`
 }
 
-/** Extrae el id de pista de una URL `waverr://track/<id>`. */
+/** Extracts the track id from a `waverr://track/<id>` URL. */
 export function parseTrackUrl(rawUrl: string): number | null {
   let url: URL
   try {
@@ -60,11 +60,11 @@ export interface ByteRange {
 }
 
 /**
- * Interpreta un header `Range` de una sola porcion.
+ * Parses a single-part `Range` header.
  *
- * Devuelve null si no hay header o no se entiende (el llamador responde el
- * archivo entero) y lanza `RangeError` si el rango es imposible, porque eso
- * merece un 416 y no un 200 silencioso.
+ * Returns null when there is no header or it cannot be understood (the caller
+ * then serves the whole file), and throws `RangeError` when the range is
+ * impossible, because that deserves a 416 rather than a silent 200.
  */
 export function parseRangeHeader(header: string | null, size: number): ByteRange | null {
   if (!header) return null
@@ -80,9 +80,9 @@ export function parseRangeHeader(header: string | null, size: number): ByteRange
   let end: number
 
   if (rawStart === '') {
-    // "bytes=-500" pide los ultimos 500 bytes.
+    // "bytes=-500" asks for the last 500 bytes.
     const suffixLength = Number(rawEnd)
-    if (suffixLength <= 0) throw new RangeError('rango vacio')
+    if (suffixLength <= 0) throw new RangeError('empty range')
     start = Math.max(0, size - suffixLength)
     end = size - 1
   } else {
@@ -90,6 +90,6 @@ export function parseRangeHeader(header: string | null, size: number): ByteRange
     end = rawEnd === '' ? size - 1 : Math.min(Number(rawEnd), size - 1)
   }
 
-  if (start > end || start >= size) throw new RangeError('rango fuera del archivo')
+  if (start > end || start >= size) throw new RangeError('range outside the file')
   return { start, end }
 }

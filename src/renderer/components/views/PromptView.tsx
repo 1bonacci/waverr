@@ -7,8 +7,8 @@ interface PromptViewProps {
   error: string | null
 }
 
-/** Escribir texto en la LCD. Reusa el teclado real, que ya es como se busca:
- *  no hace falta un teclado en pantalla. */
+/** Typing text on the LCD. It reuses the real keyboard, which is already how
+ *  search works: no on-screen keyboard needed. */
 export function PromptView({ view, error }: PromptViewProps): JSX.Element {
   return (
     <div className={styles.view} data-testid="prompt">
