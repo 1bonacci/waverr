@@ -200,11 +200,12 @@ test('MOVER reordena la cola manual y LUEGO nunca lo ofrece', async () => {
   await rows.first().click()
   await expect(page.getByTestId('now-playing')).toBeVisible()
 
-  // COLA: AHORA=context_a, MANUAL=[beat_v3, loop_128bpm], LUEGO=[context_b].
+  // COLA: AHORA=context_a, MANUAL=[beat_v3, loop_128bpm], LUEGO=[context_b],
+  // mas la fila GUARDAR COMO PLAYLIST al final (5 en total).
   await page.keyboard.press('Home')
   await rows.filter({ hasText: 'COLA' }).click()
   await expect(page.getByTestId('screen-title')).toHaveText('COLA')
-  await expect(rows).toHaveCount(4)
+  await expect(rows).toHaveCount(5)
 
   const before = await rows.allTextContents()
   const beatBefore = before.findIndex((text) => text.includes('beat_v3'))
@@ -222,7 +223,7 @@ test('MOVER reordena la cola manual y LUEGO nunca lo ofrece', async () => {
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Enter')
   await expect(page.getByTestId('moving-banner')).not.toBeVisible()
-  await expect(rows).toHaveCount(4)
+  await expect(rows).toHaveCount(5)
 
   const after = await rows.allTextContents()
   const beatAfter = after.findIndex((text) => text.includes('beat_v3'))
@@ -238,4 +239,63 @@ test('MOVER reordena la cola manual y LUEGO nunca lo ofrece', async () => {
   await rows.filter({ hasText: 'context_b' }).click({ button: 'right' })
   await expect(page.getByTestId('screen-title')).toHaveText('COLA')
   await expect(rows.filter({ hasText: 'MOVER' })).toHaveCount(0)
+})
+
+test('GUARDAR COMO PLAYLIST convierte la cola en una playlist que se puede reproducir', async () => {
+  const rows = page.getByTestId('screen-row')
+
+  // Retoma la COLA armada por el test anterior: AHORA + 2 manuales + 1 LUEGO,
+  // 4 pistas en total.
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'COLA' }).click()
+  await expect(page.getByTestId('screen-title')).toHaveText('COLA')
+
+  await rows.filter({ hasText: 'GUARDAR COMO PLAYLIST' }).click()
+  await expect(page.getByTestId('prompt')).toBeVisible()
+  await page.keyboard.type('Sesion buena')
+  await page.keyboard.press('Enter')
+
+  // El prompt no lleva a ningun lado especial (a diferencia del picker de
+  // AGREGAR A PLAYLIST): se vuelve a ver la COLA de donde salio.
+  await expect(page.getByTestId('screen-title')).toHaveText('COLA')
+
+  const playlists = await page.evaluate(() => window.waverr.library.listPlaylists())
+  const saved = playlists.find((playlist) => playlist.name === 'Sesion buena')
+  expect(saved).toBeDefined()
+  expect(saved?.trackCount).toBe(4)
+
+  // Se puede reproducir como cualquier otra playlist desde PLAYLISTS.
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'PLAYLISTS' }).click()
+  await rows.filter({ hasText: 'SESION BUENA' }).click()
+  await expect(page.getByTestId('screen-title')).toHaveText('SESION BUENA')
+  await expect(rows).toHaveCount(4)
+
+  await rows.first().click()
+  await expect(page.getByTestId('now-playing')).toBeVisible()
+})
+
+test('nombre de playlist repetido en GUARDAR COMO PLAYLIST avisa y no crea otra', async () => {
+  const rows = page.getByTestId('screen-row')
+
+  const before = await page.evaluate(() => window.waverr.library.listPlaylists())
+  const beforeCount = before.filter((playlist) => playlist.name === 'Sesion buena').length
+  expect(beforeCount).toBe(1)
+
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'COLA' }).click()
+  await rows.filter({ hasText: 'GUARDAR COMO PLAYLIST' }).click()
+  await expect(page.getByTestId('prompt')).toBeVisible()
+  await page.keyboard.type('Sesion buena')
+  await page.keyboard.press('Enter')
+
+  // El prompt sigue abierto mostrando el aviso, no se vuelve a la COLA.
+  await expect(page.getByTestId('prompt')).toBeVisible()
+  await expect(page.getByTestId('prompt')).toContainText('YA EXISTE')
+
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('screen-title')).toHaveText('COLA')
+
+  const after = await page.evaluate(() => window.waverr.library.listPlaylists())
+  expect(after.filter((playlist) => playlist.name === 'Sesion buena').length).toBe(1)
 })

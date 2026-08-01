@@ -424,6 +424,17 @@ async function buildItems(
       }
 
       if (items.length === 0) return [emptyItem('COLA VACIA')]
+
+      items.push({
+        key: 'save',
+        label: 'GUARDAR COMO PLAYLIST',
+        activate: () =>
+          dispatch({
+            type: 'push',
+            view: { kind: 'prompt', label: 'NOMBRE', value: '', intent: { kind: 'saveQueue' } }
+          })
+      })
+
       return items
     }
 
