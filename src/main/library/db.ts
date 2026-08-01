@@ -3,8 +3,8 @@ import type { Database as SqliteDatabase } from 'better-sqlite3'
 import type { Track } from '../../shared/types'
 
 /**
- * Fila cruda de `tracks` tal como la devuelve SQLite (snake_case, booleanos
- * como 0/1). Se convierte a `Track` con `rowToTrack`.
+ * A raw `tracks` row exactly as SQLite returns it (snake_case, booleans as
+ * 0/1). Converted to `Track` by `rowToTrack`.
  */
 export interface TrackRow {
   id: number
@@ -53,11 +53,12 @@ export function rowToTrack(row: TrackRow): Track {
 }
 
 /**
- * Migraciones ordenadas. `user_version` de SQLite guarda cual fue la ultima
- * aplicada, asi que agregar una migracion nueva es empujar al final del array.
+ * Ordered migrations. SQLite's `user_version` records which one was applied
+ * last, so adding a new migration is a matter of pushing onto the end of the
+ * array.
  */
 const MIGRATIONS: readonly string[] = [
-  // v1 - esquema inicial
+  // v1 - initial schema
   `
   CREATE TABLE roots (
     id       INTEGER PRIMARY KEY,
@@ -70,9 +71,9 @@ const MIGRATIONS: readonly string[] = [
     root_id        INTEGER NOT NULL REFERENCES roots(id) ON DELETE CASCADE,
     path           TEXT    NOT NULL UNIQUE,
     filename       TEXT    NOT NULL,
-    -- ruta completa de la carpeta contenedora (para el navegador de carpetas)
+    -- full path of the containing folder
     dir            TEXT    NOT NULL,
-    -- solo el nombre de esa carpeta: hace de "album" cuando el archivo no tiene tags
+    -- just the name of that folder: stands in for the album when a file has no tags
     folder         TEXT    NOT NULL,
     ext            TEXT    NOT NULL,
     size           INTEGER NOT NULL,
@@ -82,7 +83,7 @@ const MIGRATIONS: readonly string[] = [
     artist         TEXT,
     album          TEXT,
     has_tags       INTEGER NOT NULL DEFAULT 0,
-    -- 0 mientras la segunda pasada todavia no leyo los tags de este archivo
+    -- 0 while the second pass has not read this file's tags yet
     metadata_read  INTEGER NOT NULL DEFAULT 0,
     added_at       INTEGER NOT NULL,
     last_played_at INTEGER,
@@ -107,9 +108,9 @@ const MIGRATIONS: readonly string[] = [
     value TEXT NOT NULL
   );
 
-  -- Indice de busqueda. Tokenizer trigram: encuentra subcadenas en cualquier
-  -- posicion ("bpm" adentro de "loop_140bpm.wav"), que es como se busca un
-  -- archivo propio. Un tokenizer de palabras solo matchearia desde el inicio.
+  -- Search index. Trigram tokenizer: finds substrings at any position ("bpm"
+  -- inside "loop_140bpm.wav"), which is how someone searches for a file of
+  -- their own. A word tokenizer would only match from the start of a token.
   CREATE VIRTUAL TABLE tracks_fts USING fts5(
     filename, path, title, artist, album,
     content='tracks',
@@ -148,9 +149,9 @@ const MIGRATIONS: readonly string[] = [
     id          INTEGER PRIMARY KEY,
     playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
     track_id    INTEGER NOT NULL REFERENCES tracks(id)    ON DELETE CASCADE,
-    -- La posicion NO es parte de la primary key: si lo fuera, mover un item
-    -- exigiria posiciones temporales para no violar la restriccion a mitad de
-    -- camino. Reordenar es reescribir las posiciones en una transaccion.
+    -- The position is NOT part of the primary key: if it were, moving an item
+    -- would need temporary positions to avoid violating the constraint midway.
+    -- Reordering is rewriting the positions inside a transaction.
     position    INTEGER NOT NULL
   );
 
@@ -159,14 +160,14 @@ const MIGRATIONS: readonly string[] = [
 ]
 
 /**
- * Abre (y si hace falta crea) la base del indice.
+ * Opens (and creates when needed) the index database.
  *
- * @param filePath ruta del archivo .db, o ':memory:' en los tests.
+ * @param filePath path of the .db file, or ':memory:' in tests.
  */
 export function openDatabase(filePath: string): SqliteDatabase {
   const db = new Database(filePath)
 
-  // WAL: los escritos del escaneo no bloquean las lecturas de la busqueda.
+  // WAL: writes from the scan do not block reads from the search.
   if (filePath !== ':memory:') db.pragma('journal_mode = WAL')
   db.pragma('synchronous = NORMAL')
   db.pragma('foreign_keys = ON')

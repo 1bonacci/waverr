@@ -18,12 +18,12 @@ import { planSearch } from './search'
 
 const DEFAULT_LIMIT = 200
 
-/** Columnas que devuelven una fila lista para `rowToTrack`. */
+/** Columns that return a row ready for `rowToTrack`. */
 const TRACK_COLUMNS = `t.*, COALESCE(m.favorite, 0) AS favorite`
 
 /**
- * Fachada de la biblioteca. Es el unico objeto que el resto del proceso main
- * usa para hablar con el indice: nadie mas ejecuta SQL.
+ * Facade over the library. It is the only object the rest of the main process
+ * uses to talk to the index: nobody else runs SQL.
  */
 export class Library {
   private constructor(private readonly db: SqliteDatabase) {}
@@ -36,7 +36,7 @@ export class Library {
     this.db.close()
   }
 
-  // --- Raices ------------------------------------------------------------
+  // --- Roots -------------------------------------------------------------
 
   listRoots(): Root[] {
     const rows = this.db
@@ -57,8 +57,8 @@ export class Library {
   }
 
   /**
-   * Registra una carpeta raiz. Idempotente: agregar dos veces la misma ruta
-   * devuelve la existente en lugar de duplicarla.
+   * Registers a root folder. Idempotent: adding the same path twice returns
+   * the existing one instead of duplicating it.
    */
   async addRoot(rawPath: string): Promise<Root | null> {
     const path = resolve(rawPath)
@@ -83,13 +83,13 @@ export class Library {
     this.db.prepare('DELETE FROM roots WHERE id = ?').run(rootId)
   }
 
-  // --- Escaneo -----------------------------------------------------------
+  // --- Scanning ----------------------------------------------------------
 
   /**
-   * Escanea todas las raices y despues completa los tags pendientes.
+   * Scans every root, then fills in the pending tags.
    *
-   * El orden importa: la primera pasada de todas las raices termina antes de
-   * empezar a leer tags, para que la busqueda quede utilizable cuanto antes.
+   * The order matters: the first pass over all roots finishes before any tag
+   * reading starts, so search becomes usable as soon as possible.
    */
   async scanAll(onProgress?: (progress: ScanProgress) => void): Promise<ScanResult[]> {
     const results: ScanResult[] = []
@@ -102,7 +102,7 @@ export class Library {
     return results
   }
 
-  // --- Consultas ---------------------------------------------------------
+  // --- Queries -----------------------------------------------------------
 
   getTrack(trackId: number): Track | null {
     const row = this.db
@@ -117,9 +117,8 @@ export class Library {
   }
 
   /**
-   * Busqueda unificada. Es la misma funcion que alimenta la lista de carpetas,
-   * la de favoritos y el filtro incremental de la pantalla: solo cambian los
-   * campos de `TrackQuery`.
+   * Unified search. The same function feeds the flat track list, the favorites
+   * list and the screen's live filter: only the fields of `TrackQuery` change.
    */
   search(query: TrackQuery): Track[] {
     const limit = query.limit ?? DEFAULT_LIMIT
@@ -165,10 +164,10 @@ export class Library {
   }
 
   /**
-   * Marca o desmarca un favorito y devuelve el estado resultante.
+   * Toggles a favorite and returns the resulting state.
    *
-   * Las marcas viven en su propia tabla: sobreviven a que el archivo se pierda
-   * y vuelva, porque estan atadas a la fila de la pista y no al archivo.
+   * Marks live in their own table: they survive a file going missing and coming
+   * back, because they are tied to the track's row rather than to the file.
    */
   toggleFavorite(trackId: number): boolean {
     const current = this.db
@@ -238,7 +237,7 @@ export class Library {
     }))
   }
 
-  /** Devuelve null si el nombre ya esta ocupado (la comparacion ignora mayusculas). */
+  /** Returns null if the name is already taken (the comparison ignores case). */
   createPlaylist(name: string): Playlist | null {
     const clean = name.trim()
     if (clean.length === 0) return null
@@ -250,9 +249,9 @@ export class Library {
         .run(clean, now, now)
       return this.listPlaylists().find((item) => item.id === Number(result.lastInsertRowid)) ?? null
     } catch (error) {
-      // Solo el nombre repetido es un resultado esperado del negocio. Un error
-      // de otro tipo (SQL roto, tipo invalido) tiene que propagarse: si lo
-      // tragamos aca se ve identico a "nombre repetido" y queda invisible.
+      // Only a duplicate name is an expected business outcome. Any other error
+      // (broken SQL, an invalid type) has to propagate: swallowing it here
+      // would make it look identical to "duplicate name" and hide it.
       if (isUniqueViolation(error)) return null
       throw error
     }
@@ -268,8 +267,8 @@ export class Library {
         .run(clean, Date.now(), playlistId)
       return result.changes > 0
     } catch (error) {
-      // Mismo criterio que en createPlaylist: solo el nombre repetido se
-      // silencia, cualquier otro error se relanza.
+      // Same rule as createPlaylist: only a duplicate name is silenced, any
+      // other error is rethrown.
       if (isUniqueViolation(error)) return false
       throw error
     }
@@ -296,9 +295,9 @@ export class Library {
       .get(itemId) as { playlist_id: number } | undefined
     if (!row) return
 
-    // Borrar y renumerar tienen que ser una sola transaccion: si el proceso
-    // se corta entre las dos, queda una posicion salteada y se rompe el
-    // invariante de "posiciones consecutivas desde 0".
+    // The delete and the renumber have to be one transaction: if the process
+    // dies between them, a position is skipped and the "consecutive positions
+    // from 0" invariant breaks.
     this.db.transaction(() => {
       this.db.prepare('DELETE FROM playlist_items WHERE id = ?').run(itemId)
       this.renumber(row.playlist_id)
@@ -306,7 +305,7 @@ export class Library {
     this.touchPlaylist(row.playlist_id)
   }
 
-  /** Incluye las pistas perdidas: el disco externo puede volver a aparecer. */
+  /** Includes missing tracks: the external drive may show up again. */
   listPlaylistTracks(playlistId: number): PlaylistEntry[] {
     const rows = this.db
       .prepare(
@@ -326,7 +325,7 @@ export class Library {
     }))
   }
 
-  /** Satura en los extremos, igual que el modelo de la cola. */
+  /** Saturates at the ends, same as the queue model. */
   movePlaylistItem(playlistId: number, from: number, to: number): void {
     const ids = this.db
       .prepare('SELECT id FROM playlist_items WHERE playlist_id = ? ORDER BY position ASC')
@@ -349,10 +348,10 @@ export class Library {
   }
 
   /**
-   * Crea la playlist y agrega las pistas en una sola transaccion: si algun
-   * trackId no existe, la FK (`foreign_keys = ON`) revienta el INSERT y toda
-   * la transaccion se deshace, incluida la creacion de la playlist. Asi no
-   * queda ni la playlist a medio llenar ni una playlist vacia huerfana.
+   * Creates the playlist and adds the tracks in a single transaction: if any
+   * trackId does not exist, the foreign key (`foreign_keys = ON`) blows up the
+   * INSERT and the whole transaction unwinds, playlist creation included. That
+   * leaves neither a half-filled playlist nor an orphaned empty one.
    */
   createPlaylistFromTracks(name: string, trackIds: number[]): Playlist | null {
     const clean = name.trim()
@@ -377,7 +376,7 @@ export class Library {
     }
   }
 
-  // --- Ajustes -----------------------------------------------------------
+  // --- Settings ----------------------------------------------------------
 
   getSetting(key: string): string | null {
     const row = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
@@ -411,10 +410,10 @@ export class Library {
   }
 
   /**
-   * Comprueba que una ruta pertenezca a alguna raiz registrada.
+   * Checks that a path belongs to one of the registered roots.
    *
-   * Es la barrera de seguridad del protocolo de medios: el renderer pide rutas
-   * y sin esto podria pedir cualquier archivo del disco.
+   * This is the media protocol's security barrier: the renderer asks for paths,
+   * and without this it could ask for any file on the disk.
    */
   isPathInsideRoots(rawPath: string): boolean {
     const target = resolve(rawPath).toLowerCase()
@@ -429,12 +428,12 @@ export class Library {
 }
 
 /**
- * Distingue una violacion de UNIQUE (nombre de playlist repetido) de
- * cualquier otro error de SQLite. Es la unica clase de fallo que el negocio
- * espera y quiere silenciar como "false"/"null"; todo lo demas (una consulta
- * rota, un tipo invalido) tiene que propagarse tal cual, porque si lo
- * tragamos junto con la violacion de unicidad se ve identico a un simple
- * nombre repetido y el bug real queda invisible.
+ * Tells a UNIQUE violation (a duplicate playlist name) apart from any other
+ * SQLite error. That is the only kind of failure the domain expects and wants
+ * to silence as `false`/`null`; everything else (a broken query, an invalid
+ * type) has to propagate untouched, because swallowing it alongside the
+ * uniqueness violation would make it look like a plain duplicate name and
+ * leave the real bug invisible.
  */
 function isUniqueViolation(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'SQLITE_CONSTRAINT_UNIQUE'
@@ -456,8 +455,8 @@ function buildOrderBy(sort: TrackQuery['sort'], hasRelevance: boolean): string {
       // flat list still keep files from the same session together.
       return 'ORDER BY t.folder COLLATE NOCASE ASC, t.filename COLLATE NOCASE ASC'
     default:
-      // bm25 devuelve valores negativos: mas chico es mejor. Los pesos hacen
-      // que un match en el nombre de archivo gane a uno en la ruta.
+      // bm25 returns negative values: smaller is better. The weights make a
+      // match in the filename beat one in the path.
       return hasRelevance
         ? 'ORDER BY bm25(tracks_fts, 10.0, 2.0, 6.0, 4.0, 4.0) ASC'
         : 'ORDER BY t.filename COLLATE NOCASE ASC'
