@@ -457,11 +457,7 @@ export class Library {
  * nombre repetido y el bug real queda invisible.
  */
 function isUniqueViolation(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    'code' in error &&
-    (error as { code?: unknown }).code === 'SQLITE_CONSTRAINT_UNIQUE'
-  )
+  return error instanceof Error && 'code' in error && error.code === 'SQLITE_CONSTRAINT_UNIQUE'
 }
 
 function normalizeDir(path: string): string {

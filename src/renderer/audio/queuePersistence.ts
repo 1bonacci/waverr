@@ -41,6 +41,10 @@ export class QueuePersistence {
   scheduleSave(state: QueuePersistenceState): void {
     if (this.saveTimer !== null) clearTimeout(this.saveTimer)
     this.saveTimer = setTimeout(() => {
+      // Limpiar antes de guardar: si no, `flushPendingSave` (disparado por
+      // `pagehide` justo cuando este timeout ya corrio) ve un timer que cree
+      // pendiente y reescribe un payload que ya se persistio.
+      this.saveTimer = null
       const payload = JSON.stringify({
         manualTrackIds: state.manualTracks.map((t) => t.id),
         currentTrackId: state.currentTrackId

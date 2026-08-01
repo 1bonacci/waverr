@@ -19,7 +19,7 @@ export interface PlaylistPlaybackEntry {
  * arranca en la primera reproducible que venga despues en la playlist: no
  * tiene sentido intentar abrir el archivo que falta, pero saltar a la
  * primera pista de la lista (posicion 0) tampoco tiene nada que ver con lo
- * que el usuario señalo. Si no queda ninguna reproducible despues, no hay
+ * que el usuario eligio. Si no queda ninguna reproducible despues, no hay
  * donde arrancar: devuelve `null`.
  */
 export function startIndexForEntry(
