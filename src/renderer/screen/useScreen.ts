@@ -168,7 +168,16 @@ export function useScreen(): ScreenController {
       if ((view_.kind !== 'queue' && view_.kind !== 'playlist') || !view_.moving) return
 
       const { from, originId, originOccurrence } = view_.moving
-      const to = movableRowCount > 0 ? Math.max(0, Math.min(toIndex, movableRowCount - 1)) : 0
+      // `movableRowCount` sale de `items` (estado de React): el efecto de
+      // carga hace `setItems([])` antes de cada recarga, y una recarga se
+      // dispara justo si la pista actual termina a mitad del arrastre. En esa
+      // ventana `movableRowCount` cae a 0 aunque la cola real no este vacia;
+      // clampear contra eso mandaria el destino al principio en vez de donde
+      // el usuario ya habia dejado el marcador. Por eso el fallback es
+      // `toIndex` tal cual: si de verdad no hay nada que mover, la resolucion
+      // por identidad de mas abajo (o `movePlaylistItem`) no encuentra nada
+      // valido y no pasa nada.
+      const to = movableRowCount > 0 ? Math.max(0, Math.min(toIndex, movableRowCount - 1)) : Math.max(0, toIndex)
 
       if (view_.kind === 'queue') {
         // La lista pudo reconstruirse mientras se arrastraba (una pista que
