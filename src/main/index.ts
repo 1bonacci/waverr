@@ -5,13 +5,13 @@ import { Library } from './library/index'
 import { registerMediaProtocol, registerMediaScheme } from './media-protocol'
 import { IPC } from '../shared/types'
 
-// Tiene que correr antes de que la app este lista: despues de ese punto,
-// registrar privilegios de esquema ya no tiene efecto.
+// Has to run before the app is ready: past that point, registering scheme
+// privileges has no effect.
 registerMediaScheme()
 
 /**
- * Medidas del chasis. La ventana no se redimensiona: el chasis ES la ventana,
- * asi que estos numeros son tambien las medidas del "hardware" dibujado.
+ * Chassis dimensions. The window does not resize: the chassis IS the window, so
+ * these numbers are also the dimensions of the drawn "hardware".
  */
 const CHASSIS_WIDTH = 420
 const CHASSIS_HEIGHT = 700
@@ -44,7 +44,7 @@ function createWindow(): BrowserWindow {
 
   window.once('ready-to-show', () => window.show())
 
-  // Cualquier link externo abre en el navegador del sistema, nunca dentro de la app.
+  // Any external link opens in the system browser, never inside the app.
   window.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url)
     return { action: 'deny' }
@@ -60,8 +60,8 @@ function createWindow(): BrowserWindow {
   return window
 }
 
-// Una sola instancia: abrir waverr dos veces enfoca la ventana existente
-// en lugar de levantar un segundo proceso peleando por la misma base de datos.
+// A single instance: opening waverr twice focuses the existing window instead
+// of starting a second process fighting over the same database.
 const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
   app.quit()
@@ -82,8 +82,9 @@ if (!gotTheLock) {
 
     mainWindow = createWindow()
 
-    // Rescaneo incremental al arrancar: detecta lo que cambio en disco mientras
-    // la app estaba cerrada. Corre en segundo plano para no demorar la ventana.
+    // Incremental rescan on startup: picks up whatever changed on disk while
+    // the app was closed. Runs in the background so it does not delay the
+    // window.
     mainWindow.webContents.once('did-finish-load', () => {
       if (!library) return
       void scanInBackground(library, (progress) => {

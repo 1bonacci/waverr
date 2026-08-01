@@ -6,8 +6,8 @@ interface ChassisProps {
 }
 
 /**
- * Carcasa del aparato. Dibuja el cuerpo, la barra de arrastre (la ventana es
- * frameless) y deja un hueco para la pantalla y los controles.
+ * The device's shell. Draws the body and the drag bar (the window is
+ * frameless), and leaves a slot for the screen and the controls.
  */
 export function Chassis({ children }: ChassisProps): JSX.Element {
   return (

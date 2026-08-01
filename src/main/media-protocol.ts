@@ -7,13 +7,13 @@ import type { ByteRange } from '../shared/media'
 import type { Library } from './library/index'
 
 /**
- * Debe llamarse ANTES de `app.whenReady()`.
+ * Must be called BEFORE `app.whenReady()`.
  *
- * `standard` + `secure` es lo que evita que Chromium trate al audio como origen
- * opaco: si lo hiciera, el MediaElementSource quedaria "tainted" y el
- * AnalyserNode devolveria puros ceros, o sea visualizador muerto con audio
- * sonando. `stream` habilita respuestas parciales para poder buscar dentro de
- * archivos grandes sin bajarlos enteros.
+ * `standard` + `secure` is what stops Chromium treating the audio as an opaque
+ * origin: if it did, the MediaElementSource would be tainted and the
+ * AnalyserNode would return nothing but zeros -- a dead visualizer with the
+ * audio still playing. `stream` enables partial responses, so seeking inside
+ * large files does not require downloading them whole.
  */
 export function registerMediaScheme(): void {
   protocol.registerSchemesAsPrivileged([
@@ -31,27 +31,27 @@ export function registerMediaScheme(): void {
 }
 
 /**
- * Sirve audio local al renderer.
+ * Serves local audio to the renderer.
  *
- * Las pistas se piden por id, no por ruta: el renderer nunca elige que archivo
- * se abre, solo cual de los que ya estan indexados. Igual se revalida que el
- * archivo siga dentro de una carpeta raiz registrada, por si la fila quedara
- * apuntando afuera.
+ * Tracks are requested by id, not by path: the renderer never chooses which
+ * file is opened, only which of the already-indexed ones. It is still
+ * revalidated that the file sits inside a registered root folder, in case a row
+ * ends up pointing outside.
  */
 export function registerMediaProtocol(library: Library): void {
   protocol.handle(MEDIA_SCHEME, async (request) => {
     const trackId = parseTrackUrl(request.url)
-    if (trackId === null) return new Response('URL invalida', { status: 400 })
+    if (trackId === null) return new Response('Invalid URL', { status: 400 })
 
     const track = library.getTrack(trackId)
-    if (!track) return new Response('Pista desconocida', { status: 404 })
+    if (!track) return new Response('Unknown track', { status: 404 })
 
     if (!library.isPathInsideRoots(track.path)) {
-      return new Response('Fuera de las carpetas registradas', { status: 403 })
+      return new Response('Outside the registered folders', { status: 403 })
     }
 
     const info = await stat(track.path).catch(() => null)
-    if (!info?.isFile()) return new Response('Archivo no encontrado', { status: 404 })
+    if (!info?.isFile()) return new Response('File not found', { status: 404 })
 
     const headers = new Headers({
       'Content-Type': mimeTypeFor(track.path),

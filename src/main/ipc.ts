@@ -2,7 +2,7 @@ import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { IPC, type ScanProgress, type TrackQuery } from '../shared/types'
 import type { Library } from './library/index'
 
-/** Minimo entre avisos de progreso. Sin esto el escaneo inunda el IPC. */
+/** Minimum gap between progress notices. Without it the scan floods the IPC. */
 const PROGRESS_THROTTLE_MS = 120
 
 export function registerWindowIpc(): void {
@@ -90,8 +90,8 @@ export function registerLibraryIpc(library: Library, getWindow: () => BrowserWin
 }
 
 /**
- * Escaneo disparado por el usuario: no se espera el resultado para responder el
- * IPC, porque la pantalla ya muestra el progreso mientras corre.
+ * A scan triggered by the user: the IPC reply does not wait for the result,
+ * because the screen already shows the progress while it runs.
  */
 export async function scanInBackground(
   library: Library,
@@ -108,7 +108,7 @@ function throttle<T>(fn: (value: T) => void, waitMs: number): (value: T) => void
   let lastRun = 0
   return (value: T) => {
     const now = Date.now()
-    // Las fases terminales siempre pasan: son las que apagan el cartel.
+    // Terminal phases always get through: they are what clears the notice.
     const isTerminal = typeof value === 'object' && value !== null && 'phase' in value
       ? (value as { phase: string }).phase === 'done'
       : false

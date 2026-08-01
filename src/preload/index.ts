@@ -8,8 +8,8 @@ import {
 } from '../shared/types'
 
 /**
- * Unico puente entre el renderer y el sistema. El renderer nunca ve `fs`,
- * `path` ni `ipcRenderer` crudo: solo estos metodos.
+ * The only bridge between the renderer and the system. The renderer never sees
+ * `fs`, `path` or raw `ipcRenderer`: only these methods.
  */
 const api: WaverrApi = {
   window: {

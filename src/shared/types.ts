@@ -1,9 +1,9 @@
 /**
- * Tipos compartidos entre el proceso main, el preload y el renderer.
- * Este archivo es la unica fuente de verdad del contrato de IPC.
+ * Types shared between the main process, the preload and the renderer.
+ * This file is the single source of truth for the IPC contract.
  */
 
-/** Canales de IPC. Centralizados para que main y preload no se desincronicen. */
+/** IPC channels. Centralized so main and preload cannot drift apart. */
 export const IPC = {
   windowMinimize: 'window:minimize',
   windowClose: 'window:close',
@@ -31,11 +31,11 @@ export const IPC = {
   libraryGetSetting: 'library:getSetting',
   librarySetSetting: 'library:setSetting',
 
-  /** main -> renderer, progreso de escaneo */
+  /** main -> renderer, scan progress */
   libraryScanProgress: 'library:scanProgress'
 } as const
 
-/** Extensiones que waverr considera audio. */
+/** Extensions waverr treats as audio. */
 export const AUDIO_EXTENSIONS = [
   '.mp3',
   '.wav',
@@ -60,11 +60,11 @@ export interface Track {
   id: number
   rootId: number
   path: string
-  /** Nombre del archivo con extension. */
+  /** Filename including the extension. */
   filename: string
-  /** Ruta completa de la carpeta contenedora. */
+  /** Full path of the containing folder. */
   dir: string
-  /** Nombre de esa carpeta: hace de "album" cuando no hay tags. */
+  /** Name of that folder: stands in for the album when there are no tags. */
   folder: string
   ext: string
   size: number
@@ -89,8 +89,8 @@ export interface Playlist {
   updatedAt: number
 }
 
-/** Una pista dentro de una playlist. `itemId` la identifica como fila de la
- *  playlist, porque la misma pista puede estar dos veces. */
+/** A track inside a playlist. `itemId` identifies it as a row of that
+ *  playlist, because the same track can appear twice. */
 export interface PlaylistEntry extends Track {
   itemId: number
   position: number
@@ -107,9 +107,9 @@ export type ScanPhase = 'walk' | 'metadata' | 'done'
 
 export interface ScanProgress {
   phase: ScanPhase
-  /** Archivos procesados en la fase actual. */
+  /** Files processed in the current phase. */
   done: number
-  /** Total conocido de la fase actual. 0 mientras se camina el arbol. */
+  /** Known total for the current phase. 0 while the tree is being walked. */
   total: number
   rootPath: string
 }
@@ -123,9 +123,9 @@ export interface ScanResult {
 }
 
 export interface TrackQuery {
-  /** Texto libre. Vacio devuelve todo ordenado por `sort`. */
+  /** Free text. Empty returns everything, ordered by `sort`. */
   query?: string
-  /** Limitar a una carpeta exacta. */
+  /** Restrict to one exact folder. */
   folderPath?: string
   onlyFavorites?: boolean
   includeMissing?: boolean
@@ -139,7 +139,7 @@ export interface TrackQuery {
   offset?: number
 }
 
-/** API que el preload expone en `window.waverr`. */
+/** The API the preload exposes on `window.waverr`. */
 export interface WaverrApi {
   window: {
     minimize(): void
@@ -147,7 +147,7 @@ export interface WaverrApi {
   }
   library: {
     listRoots(): Promise<Root[]>
-    /** Abre el dialogo del sistema. Devuelve la raiz agregada o null si se cancelo. */
+    /** Opens the system dialog. Returns the added root, or null if cancelled. */
     pickRoot(): Promise<Root | null>
     addRoot(path: string): Promise<Root | null>
     removeRoot(rootId: number): Promise<void>
@@ -156,7 +156,7 @@ export interface WaverrApi {
     listTracks(query: TrackQuery): Promise<Track[]>
     getTrack(trackId: number): Promise<Track | null>
     stats(): Promise<LibraryStats>
-    /** Devuelve el estado resultante: true si quedo marcada como favorita. */
+    /** Returns the resulting state: true if it ended up marked as a favorite. */
     toggleFavorite(trackId: number): Promise<boolean>
     listPlaylists(): Promise<Playlist[]>
     createPlaylist(name: string): Promise<Playlist | null>

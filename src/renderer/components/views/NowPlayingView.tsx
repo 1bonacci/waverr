@@ -5,12 +5,12 @@ import { displayName } from '../../screen/useScreen'
 import { Visualizer } from '../Visualizer'
 import styles from './NowPlayingView.module.css'
 
-/** Pantalla de reproduccion: visualizador arriba, datos y transporte abajo. */
+/** Playback screen: visualizer on top, details and transport below. */
 export function NowPlayingView(): JSX.Element {
   const playback = usePlayback()
 
   if (!playback.track) {
-    return <div className={styles.empty}>SIN PISTA</div>
+    return <div className={styles.empty}>NO TRACK</div>
   }
 
   const { track, positionMs, durationMs } = playback
@@ -22,7 +22,7 @@ export function NowPlayingView(): JSX.Element {
     audioEngine.seek(ratio * durationMs)
   }
 
-  // Sin tags, la carpeta contenedora es la mejor pista de contexto que hay.
+  // With no tags, the containing folder is the best context there is.
   const subtitle = track.hasTags
     ? [track.artist, track.album].filter(Boolean).join(' - ') || track.folder
     : track.folder

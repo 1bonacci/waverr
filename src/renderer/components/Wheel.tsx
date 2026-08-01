@@ -7,13 +7,13 @@ interface WheelProps {
   controller: ScreenController
 }
 
-/** Cuanto scroll acumulado equivale a mover una fila. */
+/** How much accumulated scroll equals moving one row. */
 const SCROLL_STEP = 40
 
 /**
- * Rueda de control. Las cuatro zonas del anillo son los botones fisicos y el
- * anillo entero responde al scroll del mouse, que es el reemplazo natural de
- * girar el dedo sobre la rueda original.
+ * The click wheel. The four zones of the ring are the physical buttons, and the
+ * whole ring responds to mouse scroll, which is the natural stand-in for
+ * turning a finger around the original wheel.
  */
 export function Wheel({ controller }: WheelProps): JSX.Element {
   const scrollAccumulator = useRef(0)

@@ -2,10 +2,11 @@ import { parseFile } from 'music-metadata'
 import type { Database as SqliteDatabase } from 'better-sqlite3'
 import type { ScanProgress } from '../../shared/types'
 
-/** Cuantos archivos se leen en paralelo. Mas que esto satura el disco sin ganar tiempo. */
+/** How many files are read in parallel. More than this saturates the disk
+ *  without gaining any time. */
 const CONCURRENCY = 6
 
-/** Filas que se escriben por transaccion. */
+/** Rows written per transaction. */
 const BATCH_SIZE = 200
 
 export interface TrackTags {
@@ -16,8 +17,8 @@ export interface TrackTags {
 }
 
 /**
- * Lee tags de un archivo. Nunca lanza: un archivo corrupto o de formato raro
- * devuelve tags vacios y sigue siendo reproducible desde su nombre.
+ * Reads a file's tags. Never throws: a corrupt file, or one in an unusual
+ * format, comes back with empty tags and stays playable under its filename.
  */
 export async function readTags(filePath: string): Promise<TrackTags> {
   try {
@@ -35,11 +36,12 @@ export async function readTags(filePath: string): Promise<TrackTags> {
 }
 
 /**
- * Segunda pasada del pipeline: completa tags y duracion de todo lo que la
- * primera pasada dejo pendiente.
+ * Second pass of the pipeline: fills in tags and duration for everything the
+ * first pass left pending.
  *
- * Se puede cortar a la mitad sin dejar el indice inconsistente: cada archivo
- * marca `metadata_read = 1` al terminar, asi que la proxima corrida retoma.
+ * It can be cut off halfway without leaving the index inconsistent: each file
+ * sets `metadata_read = 1` when it finishes, so the next run picks up where
+ * this one stopped.
  */
 export async function readPendingMetadata(
   db: SqliteDatabase,
