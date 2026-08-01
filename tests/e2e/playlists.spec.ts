@@ -16,7 +16,13 @@ import { createTempLibrary } from '../unit/helpers/audio-fixtures'
  * daba por cerrado), y que la playlist se haya creado con la pista adentro.
  */
 
-const FIXTURES = ['demos/idea_140bpm.wav']
+const FIXTURES = [
+  'demos/idea_140bpm.wav',
+  // Dos pistas mas, para el test de reordenar una playlist: hace falta mas
+  // de un tema para que mover algo dentro de ella tenga sentido.
+  'beats/trap/beat_v3.wav',
+  'beats/house/loop_128bpm.wav'
+]
 
 let app: ElectronApplication
 let page: Page
@@ -90,4 +96,71 @@ test('crear una playlist desde el picker de AGREGAR A PLAYLIST vuelve a la lista
   expect(playlists).toHaveLength(1)
   expect(playlists[0]?.name).toBe('Favoritas del viernes')
   expect(playlists[0]?.trackCount).toBe(1)
+})
+
+test('MOVER reordena una playlist y el nuevo orden se reproduce', async () => {
+  const rows = page.getByTestId('screen-row')
+
+  // Arma una playlist propia de tres temas, agregando cada uno desde su
+  // carpeta con AGREGAR A PLAYLIST -> la playlist ya existente. El orden de
+  // insercion queda IDEA, BEAT_V3, LOOP_128BPM.
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'CARPETAS' }).click()
+  await rows.filter({ hasText: 'DEMOS' }).click()
+  await rows.filter({ hasText: 'idea_140bpm' }).click({ button: 'right' })
+  await rows.filter({ hasText: 'AGREGAR A PLAYLIST' }).click()
+  await rows.filter({ hasText: '+ NUEVA PLAYLIST' }).click()
+  await page.keyboard.type('EP nuevo')
+  await page.keyboard.press('Enter')
+
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'CARPETAS' }).click()
+  await rows.filter({ hasText: 'TRAP' }).click()
+  await rows.filter({ hasText: 'beat_v3' }).click({ button: 'right' })
+  await rows.filter({ hasText: 'AGREGAR A PLAYLIST' }).click()
+  await rows.filter({ hasText: 'EP NUEVO' }).click()
+
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'CARPETAS' }).click()
+  await rows.filter({ hasText: 'HOUSE' }).click()
+  await rows.filter({ hasText: 'loop_128bpm' }).click({ button: 'right' })
+  await rows.filter({ hasText: 'AGREGAR A PLAYLIST' }).click()
+  await rows.filter({ hasText: 'EP NUEVO' }).click()
+
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'PLAYLISTS' }).click()
+  await rows.filter({ hasText: 'EP NUEVO' }).click()
+  await expect(page.getByTestId('screen-title')).toHaveText('EP NUEVO')
+  // Se espera el contenido real de ESTA vista (no solo la cantidad de filas):
+  // el titulo cambia en el mismo render que el `dispatch`, pero las filas
+  // tardan un tick mas en cargar por IPC, y mientras tanto podrian quedar
+  // dibujadas las tres filas de la vista PLAYLISTS anterior (+ NUEVA
+  // PLAYLIST y las dos playlists), que por casualidad tambien suman 3.
+  await expect(rows.nth(0)).toHaveText(/idea_140bpm/)
+  await expect(rows.nth(1)).toHaveText(/beat_v3/)
+  await expect(rows.nth(2)).toHaveText(/loop_128bpm/)
+  await expect(rows).toHaveCount(3)
+
+  // MOVER: agarra la primera fila (idea_140bpm) y la lleva al final.
+  await rows.filter({ hasText: 'idea_140bpm' }).click({ button: 'right' })
+  await expect(page.getByTestId('screen-title')).toHaveText('ACCIONES')
+  await rows.filter({ hasText: 'MOVER' }).click()
+
+  await expect(page.getByTestId('moving-banner')).toBeVisible()
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await expect(page.getByTestId('moving-banner')).not.toBeVisible()
+
+  // El nuevo orden viene de releer la playlist por IPC (no es un cambio
+  // solo visual): confirma que `movePlaylistItem` persistio el reordenamiento.
+  await expect(rows.nth(0)).toHaveText(/beat_v3/)
+  await expect(rows.nth(1)).toHaveText(/loop_128bpm/)
+  await expect(rows.nth(2)).toHaveText(/idea_140bpm/)
+  await expect(rows).toHaveCount(3)
+
+  // Reproducirla arranca por la primera pista del orden NUEVO.
+  await rows.first().click()
+  await expect(page.getByTestId('now-playing')).toBeVisible()
+  await expect(page.getByTestId('np-title')).toHaveText(/beat_v3/)
 })
