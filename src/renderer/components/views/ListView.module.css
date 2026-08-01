@@ -23,20 +23,26 @@
   flex: 0 0 auto;
 }
 
-/* La fila seleccionada se invierte, como en una LCD monocroma de verdad. */
+/* The selected row is the blue bar. Black text on blue reads badly, so
+   everything inside it flips to --lcd-accent-ink. */
 .rowSelected {
-  background: var(--lcd-ink);
-  color: var(--lcd-bg);
+  background: var(--lcd-accent);
+  color: var(--lcd-accent-ink);
 }
 
-/* La fila agarrada en modo mover siempre esta tambien seleccionada (el
-   reducer hace `selected: moving.to` en cada paso del arrastre), asi que el
-   punteado se dibuja sobre el fondo invertido de `.rowSelected`
-   (`--lcd-ink`): tiene que ser `--lcd-bg` para no quedar del mismo color
-   que el fondo. Las marcas `^ ... ^` de al lado de la etiqueta son el
-   indicador que no depende de ningun contraste. */
+/* Mouse preview of what OK would select. Never applies to the selected row,
+   which already owns the strong accent. */
+.row:hover:not(.rowSelected) {
+  background: var(--lcd-accent-soft);
+}
+
+/* A row held in move mode is always also the selected row (the reducer keeps
+   `selected: moving.to` at every step of the drag), so the dashed outline is
+   drawn on top of the accent background and has to use --lcd-accent-ink to be
+   visible at all. The `^ ... ^` marks beside the label are the indicator that
+   does not depend on any contrast. */
 .rowMoving {
-  outline: 1px dashed var(--lcd-bg);
+  outline: 1px dashed var(--lcd-accent-ink);
   outline-offset: -2px;
 }
 

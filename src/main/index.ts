@@ -29,7 +29,9 @@ function createWindow(): BrowserWindow {
     maximizable: false,
     fullscreenable: false,
     frame: false,
-    backgroundColor: '#101014',
+    // Matches --chassis-edge in tokens.css: anything else flashes the wrong
+    // color before the renderer paints.
+    backgroundColor: '#c6c9cf',
     show: false,
     title: 'waverr',
     webPreferences: {

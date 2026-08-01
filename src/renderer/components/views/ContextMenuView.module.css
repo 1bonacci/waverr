@@ -10,8 +10,8 @@
   padding: 4px 8px;
   font-size: 10px;
   letter-spacing: 0.08em;
-  color: var(--lcd-bg);
-  background: var(--lcd-ink-dim);
+  color: var(--lcd-ink);
+  background: var(--lcd-accent-soft);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

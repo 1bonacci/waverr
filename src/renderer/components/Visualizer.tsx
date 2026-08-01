@@ -145,8 +145,10 @@ function maxDeviation(waveform: Uint8Array): number {
   return peak
 }
 
+/** The visualizer draws in the accent color, not the text color: black bars on
+ *  a pale screen read as a glitch, blue reads as part of the device. */
 function readInk(canvas: HTMLCanvasElement): string {
-  return getComputedStyle(canvas).getPropertyValue('--lcd-ink').trim() || '#7dfcb4'
+  return getComputedStyle(canvas).getPropertyValue('--lcd-accent').trim() || '#1f6feb'
 }
 
 /** Sin audio: una linea base viva pero quieta, para que la pantalla no parezca rota. */
