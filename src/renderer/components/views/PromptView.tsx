@@ -18,7 +18,7 @@ export function PromptView({ view, error }: PromptViewProps): JSX.Element {
         <span className={styles.caret}>_</span>
       </span>
       {error && <span className={styles.error}>{error}</span>}
-      <span className={styles.hint}>ENTER = CONFIRMAR · MENU = CANCELAR</span>
+      <span className={styles.hint}>ENTER = CONFIRM · MENU = CANCEL</span>
     </div>
   )
 }

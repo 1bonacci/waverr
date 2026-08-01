@@ -51,9 +51,9 @@ describe('mover la seleccion', () => {
 describe('navegacion', () => {
   it('apila y desapila vistas', () => {
     const state = run([
-      { type: 'push', view: { kind: 'folder', path: 'C:/beats', name: 'beats', selected: 0 } }
+      { type: 'push', view: { kind: 'menu', menu: 'tracks', selected: 0 } }
     ])
-    expect(currentView(state).kind).toBe('folder')
+    expect(currentView(state)).toMatchObject({ kind: 'menu', menu: 'tracks' })
 
     const back = screenReducer(state, { type: 'back' })
     expect(currentView(back)).toMatchObject({ kind: 'menu', menu: 'root' })
@@ -62,7 +62,7 @@ describe('navegacion', () => {
   it('conserva la seleccion del nivel anterior al volver', () => {
     const state = run([
       { type: 'move', delta: 2, itemCount: 6 },
-      { type: 'push', view: { kind: 'folder', path: 'C:/beats', name: 'beats', selected: 0 } },
+      { type: 'push', view: { kind: 'menu', menu: 'tracks', selected: 0 } },
       { type: 'move', delta: 3, itemCount: 10 },
       { type: 'back' }
     ])
@@ -77,8 +77,8 @@ describe('navegacion', () => {
 
   it('home vuelve a la raiz desde cualquier profundidad', () => {
     const state = run([
-      { type: 'push', view: { kind: 'folder', path: 'C:/a', name: 'a', selected: 0 } },
-      { type: 'push', view: { kind: 'folder', path: 'C:/a/b', name: 'b', selected: 0 } },
+      { type: 'push', view: { kind: 'menu', menu: 'tracks', selected: 0 } },
+      { type: 'push', view: { kind: 'menu', menu: 'favorites', selected: 0 } },
       { type: 'home' }
     ])
     expect(state).toEqual(INITIAL_SCREEN_STATE)

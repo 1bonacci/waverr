@@ -359,10 +359,10 @@ export class AudioEngine {
     const code = this.audio.error?.code
     const message =
       code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
-        ? 'FORMATO NO SOPORTADO'
+        ? 'UNSUPPORTED FORMAT'
         : code === MediaError.MEDIA_ERR_DECODE
-          ? 'ARCHIVO CORRUPTO'
-          : 'ERROR DE LECTURA'
+          ? 'CORRUPT FILE'
+          : 'READ ERROR'
     this.patch({ status: 'error', error: message })
   }
 
@@ -374,7 +374,7 @@ export class AudioEngine {
 
 function describeError(error: unknown): string {
   if (error instanceof DOMException && error.name === 'NotAllowedError') {
-    return 'REPRODUCCION BLOQUEADA'
+    return 'PLAYBACK BLOCKED'
   }
   return error instanceof Error ? error.message.toUpperCase() : 'ERROR'
 }

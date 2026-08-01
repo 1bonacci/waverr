@@ -68,12 +68,12 @@ function statusLabel(status: string): string {
     case 'playing':
       return '▶ PLAY'
     case 'paused':
-      return '|| PAUSA'
+      return '|| PAUSED'
     case 'loading':
-      return 'CARGANDO'
+      return 'LOADING'
     case 'error':
       return 'ERROR'
     default:
-      return 'DETENIDO'
+      return 'STOPPED'
   }
 }

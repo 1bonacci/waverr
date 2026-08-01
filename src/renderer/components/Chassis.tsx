@@ -20,8 +20,8 @@ export function Chassis({ children }: ChassisProps): JSX.Element {
               type="button"
               className={styles.windowButton}
               onClick={() => window.waverr.window.minimize()}
-              title="Minimizar"
-              aria-label="Minimizar"
+              title="Minimize"
+              aria-label="Minimize"
             >
               &#8211;
             </button>
@@ -29,8 +29,8 @@ export function Chassis({ children }: ChassisProps): JSX.Element {
               type="button"
               className={styles.windowButton}
               onClick={() => window.waverr.window.close()}
-              title="Cerrar"
-              aria-label="Cerrar"
+              title="Close"
+              aria-label="Close"
             >
               &#10005;
             </button>

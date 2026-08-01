@@ -2,7 +2,6 @@ import { stat } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import type { Database as SqliteDatabase } from 'better-sqlite3'
 import type {
-  FolderEntry,
   LibraryStats,
   Playlist,
   PlaylistEntry,
@@ -115,25 +114,6 @@ export class Library {
       .get(trackId) as TrackRow | undefined
 
     return row ? rowToTrack(row) : null
-  }
-
-  /** Carpetas con al menos una pista presente, para el navegador de la pantalla. */
-  listFolders(): FolderEntry[] {
-    const rows = this.db
-      .prepare(
-        `SELECT dir, folder, COUNT(*) AS track_count
-           FROM tracks
-          WHERE missing = 0
-          GROUP BY dir
-          ORDER BY folder COLLATE NOCASE ASC`
-      )
-      .all() as Array<{ dir: string; folder: string; track_count: number }>
-
-    return rows.map((row) => ({
-      path: row.dir,
-      name: row.folder,
-      trackCount: row.track_count
-    }))
   }
 
   /**
@@ -471,6 +451,10 @@ function buildOrderBy(sort: TrackQuery['sort'], hasRelevance: boolean): string {
       return 'ORDER BY t.added_at DESC, t.filename COLLATE NOCASE ASC'
     case 'name':
       return 'ORDER BY t.filename COLLATE NOCASE ASC'
+    case 'folder':
+      // Groups by containing folder, alphabetical inside each group. Lets one
+      // flat list still keep files from the same session together.
+      return 'ORDER BY t.folder COLLATE NOCASE ASC, t.filename COLLATE NOCASE ASC'
     default:
       // bm25 devuelve valores negativos: mas chico es mejor. Los pesos hacen
       // que un match en el nombre de archivo gane a uno en la ruta.

@@ -23,7 +23,6 @@ const api: WaverrApi = {
     removeRoot: (rootId: number) => ipcRenderer.invoke(IPC.libraryRemoveRoot, rootId),
     rescan: () => ipcRenderer.invoke(IPC.libraryRescan),
     search: (query: TrackQuery) => ipcRenderer.invoke(IPC.librarySearch, query),
-    listFolders: () => ipcRenderer.invoke(IPC.libraryListFolders),
     listTracks: (query: TrackQuery) => ipcRenderer.invoke(IPC.libraryListTracks, query),
     getTrack: (trackId: number) => ipcRenderer.invoke(IPC.libraryGetTrack, trackId),
     stats: () => ipcRenderer.invoke(IPC.libraryStats),

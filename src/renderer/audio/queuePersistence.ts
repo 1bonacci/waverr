@@ -108,7 +108,7 @@ export class QueuePersistence {
     } catch (error) {
       // Capturar excepciones para no propagar hacia void audioEngine.restore().
       // No romper el arranque; registrar y permitir reintentos.
-      console.error('QueuePersistence.restore() fallo:', error)
+      console.error('QueuePersistence.restore() failed:', error)
       this.restored = false
       return null
     }

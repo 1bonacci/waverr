@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import type { ScanProgress, Track } from '@shared/types'
 import { audioEngine } from '../audio/AudioEngine'
-import { formatTime, usePlayback } from '../audio/usePlayback'
+import { usePlayback } from '../audio/usePlayback'
 import { startIndexForEntry } from './playlistPlayback'
 import {
   buildQueueRows,
@@ -69,15 +69,22 @@ export interface ScreenController {
 }
 
 const ROOT_MENU: Array<{ id: string; label: string; view: View }> = [
-  { id: 'folders', label: 'CARPETAS', view: { kind: 'menu', menu: 'folders', selected: 0 } },
-  { id: 'recent', label: 'RECIENTES', view: { kind: 'menu', menu: 'recent', selected: 0 } },
-  { id: 'favorites', label: 'FAVORITOS', view: { kind: 'menu', menu: 'favorites', selected: 0 } },
+  { id: 'tracks', label: 'ALL TRACKS', view: { kind: 'menu', menu: 'tracks', selected: 0 } },
+  { id: 'recent', label: 'RECENT', view: { kind: 'menu', menu: 'recent', selected: 0 } },
+  { id: 'favorites', label: 'FAVORITES', view: { kind: 'menu', menu: 'favorites', selected: 0 } },
   { id: 'playlists', label: 'PLAYLISTS', view: { kind: 'menu', menu: 'playlists', selected: 0 } },
-  { id: 'queue', label: 'COLA', view: { kind: 'queue', selected: 0, moving: null } },
-  { id: 'settings', label: 'AJUSTES', view: { kind: 'menu', menu: 'settings', selected: 0 } }
+  { id: 'queue', label: 'QUEUE', view: { kind: 'queue', selected: 0, moving: null } },
+  { id: 'settings', label: 'SETTINGS', view: { kind: 'menu', menu: 'settings', selected: 0 } }
 ]
 
-const LIST_LIMIT = 300
+/**
+ * How many rows a list view loads at once.
+ *
+ * ALL TRACKS is the whole library in one flat list, so a small cap here would
+ * silently hide files. Every row is mounted (no virtualization), which is fine
+ * for a real library of a few hundred to a few thousand files.
+ */
+const LIST_LIMIT = 5000
 
 export function useScreen(): ScreenController {
   const [state, dispatch] = useReducer(screenReducer, INITIAL_SCREEN_STATE)
@@ -259,7 +266,7 @@ export function useScreen(): ScreenController {
     if (intent.kind === 'newPlaylist') {
       const playlist = await window.waverr.library.createPlaylist(value)
       if (!playlist) {
-        setPromptError('YA EXISTE')
+        setPromptError('ALREADY EXISTS')
         return
       }
       if (intent.trackIdToAdd !== undefined) {
@@ -267,7 +274,7 @@ export function useScreen(): ScreenController {
       }
     } else if (intent.kind === 'renamePlaylist') {
       if (!(await window.waverr.library.renamePlaylist(intent.playlistId, value))) {
-        setPromptError('YA EXISTE')
+        setPromptError('ALREADY EXISTS')
         return
       }
     } else {
@@ -276,7 +283,7 @@ export function useScreen(): ScreenController {
         .filter((track): track is Track => track !== null)
         .map((track) => track.id)
       if (!(await window.waverr.library.createPlaylistFromTracks(value, trackIds))) {
-        setPromptError('YA EXISTE')
+        setPromptError('ALREADY EXISTS')
         return
       }
     }
@@ -320,8 +327,6 @@ function describeView(view: View): string {
   switch (view.kind) {
     case 'menu':
       return `menu:${view.menu}`
-    case 'folder':
-      return `folder:${view.path}`
     case 'search':
       return `search:${view.query}`
     case 'queue':
@@ -341,31 +346,29 @@ function titleFor(view: View): string {
   switch (view.kind) {
     case 'menu':
       return MENU_TITLES[view.menu]
-    case 'folder':
-      return view.name.toUpperCase()
     case 'search':
-      return `BUSCAR: ${view.query.toUpperCase()}`
+      return `SEARCH: ${view.query.toUpperCase()}`
     case 'queue':
-      return 'COLA'
+      return 'QUEUE'
     case 'playlist':
       return view.name.toUpperCase()
     case 'prompt':
       return view.label
     case 'context':
-      return 'ACCIONES'
+      return 'ACTIONS'
     case 'nowPlaying':
-      return 'REPRODUCIENDO'
+      return 'NOW PLAYING'
   }
 }
 
 const MENU_TITLES: Record<MenuId, string> = {
   root: 'WAVERR',
-  folders: 'CARPETAS',
-  recent: 'RECIENTES',
-  favorites: 'FAVORITOS',
+  tracks: 'ALL TRACKS',
+  recent: 'RECENT',
+  favorites: 'FAVORITES',
   playlists: 'PLAYLISTS',
-  playlistPicker: 'A PLAYLIST',
-  settings: 'AJUSTES'
+  playlistPicker: 'ADD TO PLAYLIST',
+  settings: 'SETTINGS'
 }
 
 async function buildItems(
@@ -381,15 +384,6 @@ async function buildItems(
     case 'menu':
       return buildMenuItems(view.menu, dispatch, pendingTrackId)
 
-    case 'folder': {
-      const tracks = await window.waverr.library.search({
-        folderPath: view.path,
-        sort: 'name',
-        limit: LIST_LIMIT
-      })
-      return tracks.map(trackItem(tracks, dispatch))
-    }
-
     case 'search': {
       const tracks = await window.waverr.library.search({
         query: view.query,
@@ -404,12 +398,12 @@ async function buildItems(
 
     case 'playlist': {
       const entries = await window.waverr.library.listPlaylistTracks(view.playlistId)
-      if (entries.length === 0) return [emptyItem('PLAYLIST VACIA')]
+      if (entries.length === 0) return [emptyItem('PLAYLIST EMPTY')]
 
       return entries.map((entry, index) => ({
         key: `item-${entry.itemId}`,
         label: `${entry.missing ? '! ' : ''}${displayName(entry)}`,
-        meta: entry.durationMs ? formatTime(entry.durationMs) : entry.ext.slice(1).toUpperCase(),
+        meta: entry.folder,
         trackId: entry.id,
         favorite: entry.favorite,
         contextTarget: {
@@ -421,9 +415,9 @@ async function buildItems(
           itemId: entry.itemId
         },
         activate: () => {
-          // Las perdidas se saltean: si la elegida no suena, arranca en la
-          // primera reproducible que venga despues. Si no queda ninguna, no
-          // arranca nada (y la pantalla no se va a NOW PLAYING de arriba).
+          // Missing files are skipped: if the chosen one cannot play, start at
+          // the first playable track after it. If none is left, start nothing
+          // (and do not jump the screen to NOW PLAYING).
           const startIndex = startIndexForEntry(entries, entry.itemId)
           if (startIndex === null) return
           dispatch({ type: 'openNowPlaying' })
@@ -447,7 +441,8 @@ async function buildItems(
           items.push({
             key: 'now',
             label: displayName(row.track),
-            sectionHeader: 'AHORA',
+            meta: row.track.folder,
+            sectionHeader: 'NOW',
             activate: () => dispatch({ type: 'openNowPlaying' })
           })
           continue
@@ -458,10 +453,10 @@ async function buildItems(
           items.push({
             key: `manual-${manualIndex}-${row.track.id}`,
             label: displayName(row.track),
-            meta: formatTime(row.track.durationMs ?? 0),
-            // Rotulo solo en la primera fila de la seccion: no se repite en
-            // cada pista encolada.
-            sectionHeader: manualIndex === 0 ? 'SIGUIENTE' : undefined,
+            meta: row.track.folder,
+            // Header only on the first row of the section, so it does not
+            // repeat on every queued track.
+            sectionHeader: manualIndex === 0 ? 'NEXT UP' : undefined,
             trackId: row.track.id,
             favorite: row.track.favorite,
             contextTarget: {
@@ -488,13 +483,13 @@ async function buildItems(
           continue
         }
 
-        // LUEGO: nunca lleva contextTarget, asi que nunca ofrece MOVER/QUITAR.
+        // LATER: never carries a contextTarget, so it never offers MOVE/REMOVE.
         const upcomingIndex = row.upcomingIndex
         items.push({
           key: `upcoming-${upcomingIndex}-${row.track.id}`,
           label: displayName(row.track),
-          meta: formatTime(row.track.durationMs ?? 0),
-          sectionHeader: upcomingIndex === 0 ? 'LUEGO' : undefined,
+          meta: row.track.folder,
+          sectionHeader: upcomingIndex === 0 ? 'LATER' : undefined,
           trackId: row.track.id,
           favorite: row.track.favorite,
           activate: () => {
@@ -504,16 +499,16 @@ async function buildItems(
         })
       }
 
-      if (items.length === 0) return [emptyItem('COLA VACIA')]
+      if (items.length === 0) return [emptyItem('QUEUE EMPTY')]
 
       items.push({
         key: 'save',
-        label: 'GUARDAR COMO PLAYLIST',
+        label: 'SAVE AS PLAYLIST',
         isAction: true,
         activate: () =>
           dispatch({
             type: 'push',
-            view: { kind: 'prompt', label: 'NOMBRE', value: '', intent: { kind: 'saveQueue' } }
+            view: { kind: 'prompt', label: 'NAME', value: '', intent: { kind: 'saveQueue' } }
           })
       })
 
@@ -539,35 +534,35 @@ async function buildMenuItems(
         activate: () => dispatch({ type: 'push', view: entry.view })
       }))
 
-    case 'folders': {
-      const folders = await window.waverr.library.listFolders()
-      if (folders.length === 0) return [emptyItem('SIN CARPETAS')]
-      return folders.map((folder) => ({
-        key: folder.path,
-        label: folder.name.toUpperCase(),
-        meta: String(folder.trackCount),
-        drillsDown: true,
-        activate: () =>
-          dispatch({
-            type: 'push',
-            view: { kind: 'folder', path: folder.path, name: folder.name, selected: 0 }
-          })
-      }))
+    /**
+     * The whole library as one flat list. There is deliberately no folder
+     * browsing: a producer's library is dozens of project folders, and having
+     * to drill into each one to reach a file is backwards.
+     *
+     * Sorting groups tracks by folder so files from the same session stay
+     * together, but it is still a single scrollable list. Because `trackItem`
+     * hands this entire array to the player as the playback context, skipping
+     * forward walks the whole library instead of stopping at a folder edge.
+     */
+    case 'tracks': {
+      const tracks = await window.waverr.library.search({ sort: 'folder', limit: LIST_LIMIT })
+      if (tracks.length === 0) return [emptyItem('NO TRACKS')]
+      return tracks.map(trackItem(tracks, dispatch))
     }
 
     case 'recent': {
       const tracks = await window.waverr.library.search({ sort: 'recent', limit: LIST_LIMIT })
-      if (tracks.length === 0) return [emptyItem('NADA TODAVIA')]
+      if (tracks.length === 0) return [emptyItem('NOTHING YET')]
       return tracks.map(trackItem(tracks, dispatch))
     }
 
     case 'favorites': {
       const tracks = await window.waverr.library.search({
         onlyFavorites: true,
-        sort: 'name',
+        sort: 'folder',
         limit: LIST_LIMIT
       })
-      if (tracks.length === 0) return [emptyItem('SIN FAVORITOS')]
+      if (tracks.length === 0) return [emptyItem('NO FAVORITES')]
       return tracks.map(trackItem(tracks, dispatch))
     }
 
@@ -576,11 +571,11 @@ async function buildMenuItems(
       const items: ScreenItem[] = [
         {
           key: 'new',
-          label: '+ NUEVA PLAYLIST',
+          label: '+ NEW PLAYLIST',
           activate: () =>
             dispatch({
               type: 'push',
-              view: { kind: 'prompt', label: 'NOMBRE', value: '', intent: { kind: 'newPlaylist' } }
+              view: { kind: 'prompt', label: 'NAME', value: '', intent: { kind: 'newPlaylist' } }
             })
         }
       ]
@@ -615,19 +610,19 @@ async function buildMenuItems(
     }
 
     case 'playlistPicker': {
-      // Submenu de AGREGAR A PLAYLIST. La pista objetivo viene de la vista
-      // `context` que quedo abajo en la pila.
+      // Submenu of ADD TO PLAYLIST. The target track comes from the `context`
+      // view left underneath it on the stack.
       const playlists = await window.waverr.library.listPlaylists()
       const items: ScreenItem[] = [
         {
           key: 'new',
-          label: '+ NUEVA PLAYLIST',
+          label: '+ NEW PLAYLIST',
           activate: () =>
             dispatch({
               type: 'push',
               view: {
                 kind: 'prompt',
-                label: 'NOMBRE',
+                label: 'NAME',
                 value: '',
                 intent: { kind: 'newPlaylist', trackIdToAdd: pendingTrackId ?? undefined }
               }
@@ -644,8 +639,8 @@ async function buildMenuItems(
             if (pendingTrackId !== null) {
               await window.waverr.library.addToPlaylist(playlist.id, pendingTrackId)
             }
-            // Vuelve a la lista de donde se venia, sin quedar navegando
-            // adentro de la playlist.
+            // Back to the list the user came from, rather than leaving them
+            // navigating inside the playlist.
             dispatch({ type: 'back' })
             dispatch({ type: 'back' })
           }
@@ -664,22 +659,22 @@ async function buildMenuItems(
       const actions: ScreenItem[] = [
         {
           key: 'add',
-          label: '+ AGREGAR CARPETA',
+          label: '+ ADD FOLDER',
           activate: async () => {
             await window.waverr.library.pickRoot()
           }
         },
         {
           key: 'rescan',
-          label: 'RESCANEAR TODO',
+          label: 'RESCAN ALL',
           activate: async () => {
             await window.waverr.library.rescan()
           }
         },
         {
           key: 'stats',
-          label: `${stats.trackCount} PISTAS`,
-          meta: stats.missingCount > 0 ? `${stats.missingCount} PERDIDAS` : undefined,
+          label: `${stats.trackCount} TRACKS`,
+          meta: stats.missingCount > 0 ? `${stats.missingCount} MISSING` : undefined,
           activate: () => {}
         }
       ]
@@ -718,7 +713,7 @@ async function buildContextItems(
 
     items.push({
       key: 'play',
-      label: 'REPRODUCIR AHORA',
+      label: 'PLAY NOW',
       activate: async () => {
         dispatch({ type: 'back' })
         // Reusa la activacion normal de la fila (la misma que corre un
@@ -730,7 +725,7 @@ async function buildContextItems(
 
     items.push({
       key: 'next',
-      label: 'ENCOLAR SIGUIENTE',
+      label: 'PLAY NEXT',
       activate: async () => {
         const track = await window.waverr.library.getTrack(trackId)
         if (track) audioEngine.enqueueNext(track)
@@ -740,7 +735,7 @@ async function buildContextItems(
 
     items.push({
       key: 'last',
-      label: 'ENCOLAR AL FINAL',
+      label: 'ADD TO QUEUE',
       activate: async () => {
         const track = await window.waverr.library.getTrack(trackId)
         if (track) audioEngine.enqueue(track)
@@ -750,7 +745,7 @@ async function buildContextItems(
 
     items.push({
       key: 'playlist',
-      label: 'AGREGAR A PLAYLIST',
+      label: 'ADD TO PLAYLIST',
       drillsDown: true,
       activate: () =>
         dispatch({
@@ -761,7 +756,7 @@ async function buildContextItems(
 
     items.push({
       key: 'favorite',
-      label: 'FAVORITO',
+      label: 'FAVORITE',
       activate: async () => {
         await window.waverr.library.toggleFavorite(trackId)
         dispatch({ type: 'back' })
@@ -776,7 +771,7 @@ async function buildContextItems(
 
     items.push({
       key: 'play',
-      label: 'REPRODUCIR',
+      label: 'PLAY',
       activate: async () => {
         const entries = await window.waverr.library.listPlaylistTracks(playlistId)
         const playable = entries.filter((entry) => !entry.missing)
@@ -790,14 +785,14 @@ async function buildContextItems(
 
     items.push({
       key: 'rename',
-      label: 'RENOMBRAR',
+      label: 'RENAME',
       activate: () => {
         dispatch({ type: 'back' })
         dispatch({
           type: 'push',
           view: {
             kind: 'prompt',
-            label: 'NUEVO NOMBRE',
+            label: 'NEW NAME',
             value: '',
             intent: { kind: 'renamePlaylist', playlistId }
           }
@@ -806,7 +801,7 @@ async function buildContextItems(
     })
     items.push({
       key: 'delete',
-      label: 'BORRAR PLAYLIST',
+      label: 'DELETE PLAYLIST',
       activate: async () => {
         await window.waverr.library.deletePlaylist(playlistId)
         dispatch({ type: 'back' })
@@ -817,7 +812,7 @@ async function buildContextItems(
   if (target.origin === 'queue' || target.origin === 'playlist') {
     items.push({
       key: 'move',
-      label: 'MOVER',
+      label: 'MOVE',
       activate: () => {
         // No hace falta un `setSelection` aca: `openContextMenu` ya dejo la
         // seleccion de la vista de abajo en la fila que se toco (long-press o
@@ -842,7 +837,7 @@ async function buildContextItems(
 
     items.push({
       key: 'remove',
-      label: 'QUITAR',
+      label: 'REMOVE',
       activate: async () => {
         if (target.origin === 'queue') {
           // No se usa `target.index`: si la pista actual termino con el menu
@@ -873,7 +868,10 @@ function trackItem(
   return (track, index) => ({
     key: String(track.id),
     label: displayName(track),
-    meta: track.durationMs ? formatTime(track.durationMs) : track.ext.slice(1).toUpperCase(),
+    // The containing folder, not the duration: with one flat list covering the
+    // whole library, where a file came from is the thing you cannot infer.
+    // Duration still shows in the NOW PLAYING view.
+    meta: track.folder,
     trackId: track.id,
     favorite: track.favorite,
     contextTarget: {

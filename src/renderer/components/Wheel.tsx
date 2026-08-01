@@ -34,7 +34,7 @@ export function Wheel({ controller }: WheelProps): JSX.Element {
           type="button"
           className={`${styles.zone} ${styles.zoneTop}`}
           onClick={() => controller.dispatch({ type: 'back' })}
-          title="Atras (Esc)"
+          title="Back (Esc)"
         >
           MENU
         </button>
@@ -43,7 +43,7 @@ export function Wheel({ controller }: WheelProps): JSX.Element {
           type="button"
           className={`${styles.zone} ${styles.zoneLeft}`}
           onClick={() => void audioEngine.previous()}
-          title="Anterior (flecha izquierda)"
+          title="Previous (left arrow)"
         >
           <span className={styles.symbol}>|&#9664;&#9664;</span>
         </button>
@@ -52,7 +52,7 @@ export function Wheel({ controller }: WheelProps): JSX.Element {
           type="button"
           className={`${styles.zone} ${styles.zoneRight}`}
           onClick={() => void audioEngine.next()}
-          title="Siguiente (flecha derecha)"
+          title="Next (right arrow)"
         >
           <span className={styles.symbol}>&#9654;&#9654;|</span>
         </button>
@@ -61,7 +61,7 @@ export function Wheel({ controller }: WheelProps): JSX.Element {
           type="button"
           className={`${styles.zone} ${styles.zoneBottom}`}
           onClick={() => void audioEngine.toggle()}
-          title="Reproducir / pausar (espacio)"
+          title="Play / pause (space)"
         >
           <span className={styles.symbol}>&#9654; ||</span>
         </button>
@@ -70,7 +70,7 @@ export function Wheel({ controller }: WheelProps): JSX.Element {
           type="button"
           className={styles.center}
           onClick={() => controller.activate()}
-          title="Seleccionar (Enter)"
+          title="Select (Enter)"
         >
           OK
         </button>

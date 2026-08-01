@@ -29,7 +29,7 @@ export function registerLibraryIpc(library: Library, getWindow: () => BrowserWin
     const window = getWindow()
     const result = window
       ? await dialog.showOpenDialog(window, {
-          title: 'Elegir carpeta de musica',
+          title: 'Choose a music folder',
           properties: ['openDirectory']
         })
       : await dialog.showOpenDialog({ properties: ['openDirectory'] })
@@ -56,7 +56,6 @@ export function registerLibraryIpc(library: Library, getWindow: () => BrowserWin
 
   ipcMain.handle(IPC.librarySearch, (_event, query: TrackQuery) => library.search(query))
   ipcMain.handle(IPC.libraryListTracks, (_event, query: TrackQuery) => library.search(query))
-  ipcMain.handle(IPC.libraryListFolders, () => library.listFolders())
   ipcMain.handle(IPC.libraryGetTrack, (_event, trackId: number) => library.getTrack(trackId))
   ipcMain.handle(IPC.libraryStats, () => library.stats())
   ipcMain.handle(IPC.libraryToggleFavorite, (_event, trackId: number) =>
@@ -101,7 +100,7 @@ export async function scanInBackground(
   try {
     await library.scanAll(onProgress)
   } catch (error) {
-    console.error('[waverr] fallo el escaneo:', error)
+    console.error('[waverr] scan failed:', error)
   }
 }
 

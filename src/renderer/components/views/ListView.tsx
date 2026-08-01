@@ -25,7 +25,7 @@ export function ListView({ controller }: ListViewProps): JSX.Element {
   }, [selected, items])
 
   if (items.length === 0) {
-    return <div className={styles.empty}>{loading ? 'CARGANDO...' : 'VACIO'}</div>
+    return <div className={styles.empty}>{loading ? 'LOADING...' : 'EMPTY'}</div>
   }
 
   return (

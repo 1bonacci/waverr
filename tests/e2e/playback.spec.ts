@@ -1,4 +1,4 @@
-﻿import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -11,34 +11,47 @@ import {
 import { createTempLibrary } from '../unit/helpers/audio-fixtures'
 
 /**
- * Smoke end-to-end sobre la app ya construida (`npm run build` antes).
+ * End-to-end smoke test against the built app (run `npm run build` first).
  *
- * Cubre lo que ninguna prueba unitaria puede: indice -> protocolo waverr:// ->
- * elemento <audio> -> AnalyserNode -> canvas, manejando el aparato como lo
- * manejaria una persona.
+ * Covers what no unit test can: index -> waverr:// protocol -> <audio> element
+ * -> AnalyserNode -> canvas, driving the device the way a person would.
  */
 
 const FIXTURES = [
   'beats/trap/beat_v3.wav',
   'beats/house/loop_128bpm.wav',
   'demos/idea_140bpm.wav',
-  // Carpeta aparte para el test de COLA: dos pistas propias para armar un
-  // AHORA + LUEGO que no se pisen con las que se encolan a mano (si
-  // compartieran nombre con beat_v3/loop_128bpm, la vista COLA las mostraria
-  // dos veces y los `hasText` de las aserciones dejarian de ser unicos).
+  // Its own folder for the QUEUE test: two tracks that will not collide with
+  // the ones queued by hand (sharing a name would make the QUEUE view show
+  // them twice and the `hasText` assertions stop being unique).
   'upcoming/context_a.wav',
   'upcoming/context_b.wav',
-  // Carpeta aparte para el test de soltar con click: tres pistas propias,
-  // para no depender de cuantas otras cosas haya quedado encoladas por los
-  // tests anteriores (esos ya mutaron la cola manual y, con los fixtures
-  // sonando de fondo, una pista puede terminar sola entre un test y el
-  // siguiente y consumir la cola).
+  // Its own folder for the click-to-drop test: three tracks, so it does not
+  // depend on whatever earlier tests left queued (those already mutated the
+  // manual queue, and with fixtures playing in the background a track can end
+  // on its own between tests and consume the queue).
   'dragtest/drag_a.wav',
   'dragtest/drag_b.wav',
   'dragtest/drag_c.wav'
 ]
 
-/** Los fixtures duran lo suficiente como para observarlos sonando. */
+/**
+ * ALL TRACKS is one flat list sorted by folder, then A-Z inside each folder.
+ * With the fixtures above that is a fixed, known order, and several tests below
+ * depend on it:
+ *
+ *   0  idea_140bpm.wav   demos      <- alone in its folder
+ *   1  drag_a.wav        dragtest
+ *   2  drag_b.wav        dragtest
+ *   3  drag_c.wav        dragtest
+ *   4  loop_128bpm.wav   house
+ *   5  beat_v3.wav       trap
+ *   6  context_a.wav     upcoming
+ *   7  context_b.wav     upcoming
+ */
+const TRACK_COUNT = FIXTURES.length
+
+/** The fixtures are long enough to observe them playing. */
 const FIXTURE_SECONDS = 5
 
 let app: ElectronApplication
@@ -50,8 +63,8 @@ test.beforeAll(async () => {
   mediaRoot = await createTempLibrary(FIXTURES, FIXTURE_SECONDS)
   userDataDir = await mkdtemp(join(tmpdir(), 'waverr-e2e-userdata-'))
 
-  // El host de VSCode exporta ELECTRON_RUN_AS_NODE=1, que haria arrancar a
-  // Electron como Node puro y sin ventana. Se limpia para este proceso.
+  // The VS Code host exports ELECTRON_RUN_AS_NODE=1, which would start Electron
+  // as plain Node with no window. Clear it for this process.
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
     if (key !== 'ELECTRON_RUN_AS_NODE' && value !== undefined) env[key] = value
@@ -63,7 +76,7 @@ test.beforeAll(async () => {
   await page.waitForSelector('[data-testid="screen-title"]')
   await page.evaluate((root: string) => window.waverr.library.addRoot(root), mediaRoot)
 
-  // El escaneo corre en segundo plano; la pantalla se refresca al terminar.
+  // The scan runs in the background; the screen refreshes when it finishes.
   await expect(page.getByTestId('screen-status')).toHaveText('', { timeout: 30000 })
 })
 
@@ -73,24 +86,35 @@ test.afterAll(async () => {
   await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
 })
 
-test('el menu raiz arranca en CARPETAS', async () => {
+test('the root menu starts on ALL TRACKS', async () => {
   await expect(page.getByTestId('screen-title')).toHaveText('WAVERR')
   const rows = page.getByTestId('screen-row')
-  await expect(rows.first()).toHaveText(/CARPETAS/)
+  await expect(rows.first()).toHaveText(/ALL TRACKS/)
   await expect(rows.first()).toHaveAttribute('data-selected', 'true')
 })
 
-test('se navega hasta una pista usando solo el teclado', async () => {
+test('every file is reachable in one flat list, with its folder shown', async () => {
+  const rows = page.getByTestId('screen-row')
+  await page.keyboard.press('Home')
+  await page.keyboard.press('Enter')
+
+  await expect(page.getByTestId('screen-title')).toHaveText('ALL TRACKS')
+
+  // Every audio file, with no folder rows to drill through in between.
+  await expect(rows).toHaveCount(TRACK_COUNT, { timeout: 10000 })
+  const labels = await rows.allTextContents()
+  expect(labels.every((label) => label.includes('.wav'))).toBe(true)
+
+  // Each row carries the folder it came from.
+  expect(labels[0]).toContain('idea_140bpm.wav')
+  expect(labels[0]).toContain('demos')
+})
+
+test('a track is reachable with two keypresses and no folder drilling', async () => {
   const rows = page.getByTestId('screen-row')
   await page.keyboard.press('Home')
 
-  // Cada nivel se carga de la base, asi que se espera el contenido de la lista
-  // antes de seguir bajando: CARPETAS -> primera carpeta -> primera pista.
-  await expect(rows.first()).toHaveText(/CARPETAS/)
-  await page.keyboard.press('Enter')
-
-  await expect(page.getByTestId('screen-title')).toHaveText('CARPETAS')
-  await expect(rows.first()).toHaveText(/DEMOS/)
+  await expect(rows.first()).toHaveText(/ALL TRACKS/)
   await page.keyboard.press('Enter')
 
   await expect(rows.first()).toHaveText(/\.wav/)
@@ -100,23 +124,41 @@ test('se navega hasta una pista usando solo el teclado', async () => {
   await expect(page.getByTestId('np-title')).toHaveText(/\.wav$/)
 })
 
-/** Indicador de reproduccion que dibuja la LCD. */
+test('skipping forward crosses folder boundaries instead of stopping', async () => {
+  const rows = page.getByTestId('screen-row')
+
+  // idea_140bpm is the only file in `demos`, so it is the last track of its
+  // folder. Browsing by folder, NEXT had nowhere left to go and playback
+  // stopped there. The whole library is the context now, so it must continue
+  // into the next folder.
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'ALL TRACKS' }).click()
+  await rows.filter({ hasText: 'idea_140bpm' }).click()
+
+  await expect(page.getByTestId('np-title')).toHaveText('idea_140bpm.wav')
+
+  await page.keyboard.press('ArrowRight')
+
+  await expect(page.getByTestId('np-title')).toHaveText('drag_a.wav', { timeout: 10000 })
+})
+
+/** Playback indicator drawn on the LCD. */
 const PLAYING = '▶'
 
-test('el analizador recibe audio y el visualizador dibuja', async () => {
+test('the analyser receives audio and the visualizer draws', async () => {
   await expect(page.getByTestId('screen-status')).toHaveText(PLAYING, { timeout: 15000 })
 
-  // Si el MediaElementSource quedara "tainted", el analizador devolveria cero
-  // fijo con el audio igual sonando: esto es lo que lo detecta.
+  // If the MediaElementSource were tainted, the analyser would return a flat
+  // zero while the audio still played. This is what catches that.
   await expect
     .poll(async () => Number(await page.getByTestId('visualizer').getAttribute('data-peak')), {
       timeout: 15000,
-      message: 'el AnalyserNode nunca recibio audio'
+      message: 'the AnalyserNode never received audio'
     })
     .toBeGreaterThan(0)
 })
 
-test('V cicla los modos del visualizador', async () => {
+test('V cycles the visualizer modes', async () => {
   const canvas = page.getByTestId('visualizer')
   await expect(canvas).toHaveAttribute('data-mode', 'bars')
 
@@ -130,16 +172,16 @@ test('V cicla los modos del visualizador', async () => {
   await expect(canvas).toHaveAttribute('data-mode', 'bars')
 })
 
-test('tipear en cualquier lado abre la busqueda y filtra en vivo', async () => {
+test('typing anywhere opens search and filters live', async () => {
   await page.keyboard.press('Home')
   await page.keyboard.type('bpm')
 
-  await expect(page.getByTestId('screen-title')).toHaveText(/BUSCAR: BPM/)
+  await expect(page.getByTestId('screen-title')).toHaveText(/SEARCH: BPM/)
   await expect(page.getByTestId('screen-row')).toHaveCount(2, { timeout: 10000 })
 
-  // Backspace borra letras; con la busqueda vacia, sale de la busqueda.
+  // Backspace deletes letters; on an empty search it leaves the search.
   await page.keyboard.press('Backspace')
-  await expect(page.getByTestId('screen-title')).toHaveText(/BUSCAR: BP/)
+  await expect(page.getByTestId('screen-title')).toHaveText(/SEARCH: BP/)
 
   await page.keyboard.press('Backspace')
   await page.keyboard.press('Backspace')
@@ -147,13 +189,11 @@ test('tipear en cualquier lado abre la busqueda y filtra en vivo', async () => {
   await expect(page.getByTestId('screen-title')).toHaveText('WAVERR')
 })
 
-test('F marca un favorito y aparece en FAVORITOS', async () => {
+test('F marks a favorite and it shows up under FAVORITES', async () => {
   const rows = page.getByTestId('screen-row')
 
   await page.keyboard.press('Home')
-  await expect(rows.first()).toHaveText(/CARPETAS/)
-  await page.keyboard.press('Enter')
-  await expect(rows.first()).toHaveText(/DEMOS/)
+  await expect(rows.first()).toHaveText(/ALL TRACKS/)
   await page.keyboard.press('Enter')
   await expect(rows.first()).toHaveText(/idea_140bpm/)
 
@@ -165,12 +205,12 @@ test('F marca un favorito y aparece en FAVORITOS', async () => {
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Enter')
 
-  await expect(page.getByTestId('screen-title')).toHaveText('FAVORITOS')
+  await expect(page.getByTestId('screen-title')).toHaveText('FAVORITES')
   await expect(rows).toHaveCount(1)
   await expect(rows.first()).toHaveText(/idea_140bpm/)
 })
 
-test('espacio pausa y reanuda', async () => {
+test('space pauses and resumes', async () => {
   await page.keyboard.press('Space')
   await expect(page.getByTestId('screen-status')).toHaveText('||', { timeout: 10000 })
 
@@ -178,41 +218,31 @@ test('espacio pausa y reanuda', async () => {
   await expect(page.getByTestId('screen-status')).toHaveText(PLAYING, { timeout: 10000 })
 })
 
-test('MOVER reordena la cola manual y LUEGO nunca lo ofrece', async () => {
+test('MOVE reorders the manual queue and LATER never offers it', async () => {
   const rows = page.getByTestId('screen-row')
 
-  // Cola manual: dos pistas por ENCOLAR AL FINAL, en el orden en que se
-  // encolan (TRAP primero, HOUSE despues).
+  // Manual queue: two tracks via ADD TO QUEUE, in the order they are queued
+  // (beat_v3 first, loop_128bpm second).
   await page.keyboard.press('Home')
-  await rows.filter({ hasText: 'CARPETAS' }).click()
-  await rows.filter({ hasText: 'TRAP' }).click()
-  await expect(rows.first()).toHaveText(/beat_v3/)
-  await rows.first().click({ button: 'right' })
-  await expect(page.getByTestId('screen-title')).toHaveText('ACCIONES')
-  await rows.filter({ hasText: 'ENCOLAR AL FINAL' }).click()
+  await rows.filter({ hasText: 'ALL TRACKS' }).click()
+  await rows.filter({ hasText: 'beat_v3' }).click({ button: 'right' })
+  await expect(page.getByTestId('screen-title')).toHaveText('ACTIONS')
+  await rows.filter({ hasText: 'ADD TO QUEUE' }).click()
 
-  await page.keyboard.press('Home')
-  await rows.filter({ hasText: 'CARPETAS' }).click()
-  await rows.filter({ hasText: 'HOUSE' }).click()
-  await expect(rows.first()).toHaveText(/loop_128bpm/)
-  await rows.first().click({ button: 'right' })
-  await expect(page.getByTestId('screen-title')).toHaveText('ACCIONES')
-  await rows.filter({ hasText: 'ENCOLAR AL FINAL' }).click()
+  await rows.filter({ hasText: 'loop_128bpm' }).click({ button: 'right' })
+  await expect(page.getByTestId('screen-title')).toHaveText('ACTIONS')
+  await rows.filter({ hasText: 'ADD TO QUEUE' }).click()
 
-  // AHORA + LUEGO: un contexto propio de dos pistas (UPCOMING), que no
-  // comparte nombres con lo que se acaba de encolar a mano.
-  await page.keyboard.press('Home')
-  await rows.filter({ hasText: 'CARPETAS' }).click()
-  await rows.filter({ hasText: 'UPCOMING' }).click()
-  await expect(rows.first()).toHaveText(/context_a/)
-  await rows.first().click()
+  // NOW + LATER: context_a is second to last in the flat list, so playing it
+  // leaves exactly one track (context_b) in LATER.
+  await rows.filter({ hasText: 'context_a' }).click()
   await expect(page.getByTestId('now-playing')).toBeVisible()
 
-  // COLA: AHORA=context_a, MANUAL=[beat_v3, loop_128bpm], LUEGO=[context_b],
-  // mas la fila GUARDAR COMO PLAYLIST al final (5 en total).
+  // QUEUE: NOW=context_a, MANUAL=[beat_v3, loop_128bpm], LATER=[context_b],
+  // plus the SAVE AS PLAYLIST row at the end (5 in total).
   await page.keyboard.press('Home')
-  await rows.filter({ hasText: 'COLA' }).click()
-  await expect(page.getByTestId('screen-title')).toHaveText('COLA')
+  await rows.filter({ hasText: 'QUEUE' }).click()
+  await expect(page.getByTestId('screen-title')).toHaveText('QUEUE')
   await expect(rows).toHaveCount(5)
 
   const before = await rows.allTextContents()
@@ -221,11 +251,11 @@ test('MOVER reordena la cola manual y LUEGO nunca lo ofrece', async () => {
   expect(beatBefore).toBeGreaterThanOrEqual(0)
   expect(loopBefore).toBeGreaterThan(beatBefore)
 
-  // MOVER: agarrar la primera de la cola manual (beat_v3) y bajarla una
-  // posicion con el teclado, como si arrastrara sobre loop_128bpm.
+  // MOVE: grab the first of the manual queue (beat_v3) and push it down one
+  // position with the keyboard, as if dragging it over loop_128bpm.
   await rows.filter({ hasText: 'beat_v3' }).click({ button: 'right' })
-  await expect(page.getByTestId('screen-title')).toHaveText('ACCIONES')
-  await rows.filter({ hasText: 'MOVER' }).click()
+  await expect(page.getByTestId('screen-title')).toHaveText('ACTIONS')
+  await rows.filter({ hasText: /^MOVE$/ }).click()
 
   await expect(page.getByTestId('moving-banner')).toBeVisible()
   await page.keyboard.press('ArrowDown')
@@ -236,115 +266,111 @@ test('MOVER reordena la cola manual y LUEGO nunca lo ofrece', async () => {
   const after = await rows.allTextContents()
   const beatAfter = after.findIndex((text) => text.includes('beat_v3'))
   const loopAfter = after.findIndex((text) => text.includes('loop_128bpm'))
-  // Se solto una fila mas abajo: loop_128bpm paso a la punta de la cola
-  // manual y beat_v3 quedo justo despues.
+  // Dropped one row lower: loop_128bpm became the head of the manual queue and
+  // beat_v3 ended up right after it.
   expect(loopAfter).toBeLessThan(beatAfter)
 
-  // LUEGO (context_b, lo unico que queda del contexto) nunca ofrece MOVER: ni
-  // siquiera abre el menu contextual, porque esa fila no lleva
-  // `contextTarget` (a diferencia de una fila de la cola manual, que si lo
-  // lleva y por eso recien arriba pudo abrir ACCIONES).
+  // LATER (context_b, all that is left of the context) never offers MOVE: it
+  // does not even open the context menu, because that row carries no
+  // `contextTarget` (unlike a manual queue row, which does, which is why
+  // ACTIONS opened above).
   await rows.filter({ hasText: 'context_b' }).click({ button: 'right' })
-  await expect(page.getByTestId('screen-title')).toHaveText('COLA')
-  await expect(rows.filter({ hasText: 'MOVER' })).toHaveCount(0)
+  await expect(page.getByTestId('screen-title')).toHaveText('QUEUE')
+  await expect(rows.filter({ hasText: /^MOVE$/ })).toHaveCount(0)
 })
 
-test('GUARDAR COMO PLAYLIST convierte la cola en una playlist que se puede reproducir', async () => {
+test('SAVE AS PLAYLIST turns the queue into a playable playlist', async () => {
   const rows = page.getByTestId('screen-row')
 
-  // Retoma la COLA armada por el test anterior: AHORA + 2 manuales + 1 LUEGO,
-  // 4 pistas en total.
+  // Picks up the queue built by the previous test: NOW + 2 manual + 1 LATER,
+  // 4 tracks in total.
   await page.keyboard.press('Home')
-  await rows.filter({ hasText: 'COLA' }).click()
-  await expect(page.getByTestId('screen-title')).toHaveText('COLA')
+  await rows.filter({ hasText: 'QUEUE' }).click()
+  await expect(page.getByTestId('screen-title')).toHaveText('QUEUE')
 
-  await rows.filter({ hasText: 'GUARDAR COMO PLAYLIST' }).click()
+  await rows.filter({ hasText: 'SAVE AS PLAYLIST' }).click()
   await expect(page.getByTestId('prompt')).toBeVisible()
-  await page.keyboard.type('Sesion buena')
+  await page.keyboard.type('Good session')
   await page.keyboard.press('Enter')
 
-  // El prompt no lleva a ningun lado especial (a diferencia del picker de
-  // AGREGAR A PLAYLIST): se vuelve a ver la COLA de donde salio.
-  await expect(page.getByTestId('screen-title')).toHaveText('COLA')
+  // The prompt does not lead anywhere special (unlike the ADD TO PLAYLIST
+  // picker): the QUEUE it came from is visible again.
+  await expect(page.getByTestId('screen-title')).toHaveText('QUEUE')
 
   const playlists = await page.evaluate(() => window.waverr.library.listPlaylists())
-  const saved = playlists.find((playlist) => playlist.name === 'Sesion buena')
+  const saved = playlists.find((playlist) => playlist.name === 'Good session')
   expect(saved).toBeDefined()
   expect(saved?.trackCount).toBe(4)
 
-  // Se puede reproducir como cualquier otra playlist desde PLAYLISTS.
+  // It plays like any other playlist from PLAYLISTS.
   await page.keyboard.press('Home')
   await rows.filter({ hasText: 'PLAYLISTS' }).click()
-  await rows.filter({ hasText: 'SESION BUENA' }).click()
-  await expect(page.getByTestId('screen-title')).toHaveText('SESION BUENA')
+  await rows.filter({ hasText: 'GOOD SESSION' }).click()
+  await expect(page.getByTestId('screen-title')).toHaveText('GOOD SESSION')
   await expect(rows).toHaveCount(4)
 
   await rows.first().click()
   await expect(page.getByTestId('now-playing')).toBeVisible()
 })
 
-test('nombre de playlist repetido en GUARDAR COMO PLAYLIST avisa y no crea otra', async () => {
+test('a duplicate name in SAVE AS PLAYLIST warns and creates nothing', async () => {
   const rows = page.getByTestId('screen-row')
 
   const before = await page.evaluate(() => window.waverr.library.listPlaylists())
-  const beforeCount = before.filter((playlist) => playlist.name === 'Sesion buena').length
-  expect(beforeCount).toBe(1)
+  expect(before.filter((playlist) => playlist.name === 'Good session')).toHaveLength(1)
 
   await page.keyboard.press('Home')
-  await rows.filter({ hasText: 'COLA' }).click()
-  await rows.filter({ hasText: 'GUARDAR COMO PLAYLIST' }).click()
+  await rows.filter({ hasText: 'QUEUE' }).click()
+  await rows.filter({ hasText: 'SAVE AS PLAYLIST' }).click()
   await expect(page.getByTestId('prompt')).toBeVisible()
-  await page.keyboard.type('Sesion buena')
+  await page.keyboard.type('Good session')
   await page.keyboard.press('Enter')
 
-  // El prompt sigue abierto mostrando el aviso, no se vuelve a la COLA.
+  // The prompt stays open showing the warning instead of returning to QUEUE.
   await expect(page.getByTestId('prompt')).toBeVisible()
-  await expect(page.getByTestId('prompt')).toContainText('YA EXISTE')
+  await expect(page.getByTestId('prompt')).toContainText('ALREADY EXISTS')
 
   await page.keyboard.press('Escape')
-  await expect(page.getByTestId('screen-title')).toHaveText('COLA')
+  await expect(page.getByTestId('screen-title')).toHaveText('QUEUE')
 
   const after = await page.evaluate(() => window.waverr.library.listPlaylists())
-  expect(after.filter((playlist) => playlist.name === 'Sesion buena').length).toBe(1)
+  expect(after.filter((playlist) => playlist.name === 'Good session')).toHaveLength(1)
 })
 
-test('soltar con click en modo mover reordena la cola y no la mutila', async () => {
+test('dropping with a click in move mode reorders the queue without mangling it', async () => {
   const rows = page.getByTestId('screen-row')
 
-  // No asume nada de lo que dejaron los tests anteriores en la cola: con los
-  // fixtures sonando de fondo, una pista puede terminar sola entre un test y
-  // el siguiente (el escenario de Important 4) y correr todo lo que este
-  // encolado. Por eso esta prueba usa tres pistas propias (DRAGTEST) y
-  // compara posiciones relativas entre ellas, nunca indices absolutos de
-  // fila ni una cantidad total de filas.
+  // Assumes nothing about what earlier tests left in the queue: with fixtures
+  // playing in the background a track can end on its own between tests and
+  // consume whatever is queued. So this test uses three tracks of its own
+  // (DRAGTEST) and compares their relative positions, never absolute row
+  // indices or a total row count.
   //
-  // Pausa antes de tocar nada: si sigue sonando, la pista actual podria
-  // terminar a mitad de esta prueba y consumir la cola manual sola,
-  // ensuciando una comparacion que es sobre otra cosa (el click, no el
-  // avance automatico).
+  // Pause before touching anything: if it kept playing, the current track
+  // could end midway through and consume the manual queue on its own, dirtying
+  // a comparison that is about something else (the click, not auto-advance).
   await page.keyboard.press('Home')
   const status = await page.getByTestId('screen-status').textContent()
-  if (status?.includes('▶')) {
+  if (status?.includes(PLAYING)) {
     await page.keyboard.press('Space')
     await expect(page.getByTestId('screen-status')).toHaveText('||')
   }
 
-  await rows.filter({ hasText: 'CARPETAS' }).click()
-  await rows.filter({ hasText: 'DRAGTEST' }).click()
+  await rows.filter({ hasText: 'ALL TRACKS' }).click()
   await rows.filter({ hasText: 'drag_a' }).click({ button: 'right' })
-  await rows.filter({ hasText: 'ENCOLAR AL FINAL' }).click()
+  await rows.filter({ hasText: 'ADD TO QUEUE' }).click()
   await rows.filter({ hasText: 'drag_b' }).click({ button: 'right' })
-  await rows.filter({ hasText: 'ENCOLAR AL FINAL' }).click()
+  await rows.filter({ hasText: 'ADD TO QUEUE' }).click()
   await rows.filter({ hasText: 'drag_c' }).click({ button: 'right' })
-  await rows.filter({ hasText: 'ENCOLAR AL FINAL' }).click()
+  await rows.filter({ hasText: 'ADD TO QUEUE' }).click()
 
   await page.keyboard.press('Home')
-  await rows.filter({ hasText: 'COLA' }).click()
-  await expect(page.getByTestId('screen-title')).toHaveText('COLA')
+  await rows.filter({ hasText: 'QUEUE' }).click()
+  await expect(page.getByTestId('screen-title')).toHaveText('QUEUE')
 
-  // Se encolaron en orden a, b, c: quedan asi, consecutivas, sin importar
-  // cuantas otras filas haya antes (la fila AHORA siempre esta primera si
-  // hay algo sonando).
+  // Queued in order a, b, c: they stay that way, consecutive, no matter how
+  // many other rows come first (the NOW row is always first if something is
+  // playing).
   const before = await rows.allTextContents()
   const nowBefore = before[0]
   const indexA0 = before.findIndex((text) => text.includes('drag_a'))
@@ -354,30 +380,29 @@ test('soltar con click en modo mover reordena la cola y no la mutila', async () 
   expect(indexB0).toBe(indexA0 + 1)
   expect(indexC0).toBe(indexB0 + 1)
 
-  // Agarra la primera de las tres (drag_a) con MOVER.
+  // Grab the first of the three (drag_a) with MOVE.
   await rows.filter({ hasText: 'drag_a' }).click({ button: 'right' })
-  await expect(page.getByTestId('screen-title')).toHaveText('ACCIONES')
-  await rows.filter({ hasText: 'MOVER' }).click()
+  await expect(page.getByTestId('screen-title')).toHaveText('ACTIONS')
+  await rows.filter({ hasText: /^MOVE$/ }).click()
   await expect(page.getByTestId('moving-banner')).toBeVisible()
 
-  // Suelta con CLICK (no con OK ni con las flechas) sobre la fila de
-  // drag_c. Antes de este arreglo, un click durante el arrastre ejecutaba la
-  // activacion normal de la fila tocada (saltar a esa pista) en vez de
-  // soltar ahi: la pantalla se hubiera ido a REPRODUCIENDO con drag_c
-  // sonando, y de paso corrido `removeFromQueue(0)` en bucle, mutilando todo
-  // lo que estaba encolado antes.
+  // Drop with a CLICK (not OK, not the arrows) on the drag_c row. Before this
+  // was fixed, a click during a drag ran the row's normal activation (jump to
+  // that track) instead of dropping there: the screen would have gone to NOW
+  // PLAYING with drag_c playing, and `removeFromQueue(0)` would have run in a
+  // loop, mangling everything queued before it.
   await rows.filter({ hasText: 'drag_c' }).click()
   await expect(page.getByTestId('moving-banner')).not.toBeVisible()
 
-  // Sigue en COLA (no se fue a REPRODUCIENDO) y AHORA no cambio: el click se
-  // interpreto como "soltar ahi", no como "reproducir esta pista ahora".
-  await expect(page.getByTestId('screen-title')).toHaveText('COLA')
+  // Still on QUEUE (it did not go to NOW PLAYING) and NOW did not change: the
+  // click was read as "drop here", not as "play this track now".
+  await expect(page.getByTestId('screen-title')).toHaveText('QUEUE')
   await expect(page.getByTestId('now-playing')).not.toBeVisible()
   const after = await rows.allTextContents()
   expect(after[0]).toBe(nowBefore)
 
-  // Las tres siguen estando, ninguna se perdio ni se duplico, y quedaron en
-  // el orden que produce mover drag_a al final de la cola manual: b, c, a.
+  // All three are still there, none lost or duplicated, in the order that
+  // moving drag_a to the end of the manual queue produces: b, c, a.
   const indexA1 = after.findIndex((text) => text.includes('drag_a'))
   const indexB1 = after.findIndex((text) => text.includes('drag_b'))
   const indexC1 = after.findIndex((text) => text.includes('drag_c'))

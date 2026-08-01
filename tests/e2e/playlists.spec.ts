@@ -11,18 +11,28 @@ import {
 import { createTempLibrary } from '../unit/helpers/audio-fixtures'
 
 /**
- * Cubre el camino completo de "AGREGAR A PLAYLIST" -> "+ NUEVA PLAYLIST":
- * que el usuario vuelva a la lista de origen (no al menu contextual que ya
- * daba por cerrado), y que la playlist se haya creado con la pista adentro.
+ * Covers the full "ADD TO PLAYLIST" -> "+ NEW PLAYLIST" path: that the user
+ * lands back on the list they came from (not on the context menu they already
+ * considered closed), and that the playlist really was created with the track
+ * in it.
  */
 
 const FIXTURES = [
   'demos/idea_140bpm.wav',
-  // Dos pistas mas, para el test de reordenar una playlist: hace falta mas
-  // de un tema para que mover algo dentro de ella tenga sentido.
+  // Two more tracks for the playlist reordering test: moving something inside
+  // a playlist only means anything with more than one track in it.
   'beats/trap/beat_v3.wav',
   'beats/house/loop_128bpm.wav'
 ]
+
+/**
+ * ALL TRACKS is sorted by folder, then A-Z inside each folder, so with these
+ * fixtures the flat list is always:
+ *
+ *   0  idea_140bpm.wav   demos
+ *   1  loop_128bpm.wav   house
+ *   2  beat_v3.wav       trap
+ */
 
 let app: ElectronApplication
 let page: Page
@@ -33,8 +43,8 @@ test.beforeAll(async () => {
   mediaRoot = await createTempLibrary(FIXTURES)
   userDataDir = await mkdtemp(join(tmpdir(), 'waverr-e2e-userdata-'))
 
-  // El host de VSCode exporta ELECTRON_RUN_AS_NODE=1, que haria arrancar a
-  // Electron como Node puro y sin ventana. Se limpia para este proceso.
+  // The VS Code host exports ELECTRON_RUN_AS_NODE=1, which would start Electron
+  // as plain Node with no window. Clear it for this process.
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
     if (key !== 'ELECTRON_RUN_AS_NODE' && value !== undefined) env[key] = value
@@ -46,7 +56,7 @@ test.beforeAll(async () => {
   await page.waitForSelector('[data-testid="screen-title"]')
   await page.evaluate((root: string) => window.waverr.library.addRoot(root), mediaRoot)
 
-  // El escaneo corre en segundo plano; la pantalla se refresca al terminar.
+  // The scan runs in the background; the screen refreshes when it finishes.
   await expect(page.getByTestId('screen-status')).toHaveText('', { timeout: 30000 })
 })
 
@@ -56,95 +66,86 @@ test.afterAll(async () => {
   await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
 })
 
-test('crear una playlist desde el picker de AGREGAR A PLAYLIST vuelve a la lista de origen', async () => {
+test('creating a playlist from the ADD TO PLAYLIST picker returns to the list it came from', async () => {
   const rows = page.getByTestId('screen-row')
 
   await page.keyboard.press('Home')
-  await expect(rows.first()).toHaveText(/CARPETAS/)
+  await expect(rows.first()).toHaveText(/ALL TRACKS/)
   await page.keyboard.press('Enter')
 
-  await expect(page.getByTestId('screen-title')).toHaveText('CARPETAS')
-  await expect(rows.first()).toHaveText(/DEMOS/)
-  await page.keyboard.press('Enter')
-
-  await expect(page.getByTestId('screen-title')).toHaveText('DEMOS')
+  await expect(page.getByTestId('screen-title')).toHaveText('ALL TRACKS')
   await expect(rows.first()).toHaveText(/idea_140bpm/)
 
-  // Menu contextual con click derecho: la via que tiene quien no usa teclado.
+  // Context menu with a right click: the route for someone not using the
+  // keyboard.
   await rows.first().click({ button: 'right' })
-  await expect(page.getByTestId('screen-title')).toHaveText('ACCIONES')
+  await expect(page.getByTestId('screen-title')).toHaveText('ACTIONS')
 
-  await rows.filter({ hasText: 'AGREGAR A PLAYLIST' }).click()
-  await expect(page.getByTestId('screen-title')).toHaveText('A PLAYLIST')
+  await rows.filter({ hasText: 'ADD TO PLAYLIST' }).click()
+  await expect(page.getByTestId('screen-title')).toHaveText('ADD TO PLAYLIST')
 
-  await rows.filter({ hasText: '+ NUEVA PLAYLIST' }).click()
+  await rows.filter({ hasText: '+ NEW PLAYLIST' }).click()
   await expect(page.getByTestId('prompt')).toBeVisible()
 
-  // El nombre lleva V y F a proposito: son letras con atajo global (visualizer,
-  // favorito) fuera del prompt, y tienen que escribirse igual que cualquier otra.
-  await page.keyboard.type('Favoritas del viernes')
-  await expect(page.getByTestId('prompt-value')).toHaveText(/Favoritas del viernes/)
+  // The name deliberately contains V and F: outside the prompt those letters
+  // are global shortcuts (visualizer, favorite), and they have to type like any
+  // other character inside it.
+  await page.keyboard.type('Friday favorites')
+  await expect(page.getByTestId('prompt-value')).toHaveText(/Friday favorites/)
   await page.keyboard.press('Enter')
 
-  // Ni el picker ni el menu contextual quedan colgados debajo: se vuelve a
-  // la carpeta de origen, viendo la pista de nuevo (no "ACCIONES").
-  await expect(page.getByTestId('screen-title')).toHaveText('DEMOS')
+  // Neither the picker nor the context menu is left dangling underneath: the
+  // user is back on the list they started from, seeing the track again (not
+  // "ACTIONS").
+  await expect(page.getByTestId('screen-title')).toHaveText('ALL TRACKS')
   await expect(rows.first()).toHaveText(/idea_140bpm/)
 
-  // La playlist se creo de verdad, con la pista adentro.
+  // The playlist really was created, with the track in it.
   const playlists = await page.evaluate(() => window.waverr.library.listPlaylists())
   expect(playlists).toHaveLength(1)
-  expect(playlists[0]?.name).toBe('Favoritas del viernes')
+  expect(playlists[0]?.name).toBe('Friday favorites')
   expect(playlists[0]?.trackCount).toBe(1)
 })
 
-test('MOVER reordena una playlist y el nuevo orden se reproduce', async () => {
+test('MOVE reorders a playlist and the new order is what plays', async () => {
   const rows = page.getByTestId('screen-row')
 
-  // Arma una playlist propia de tres temas, agregando cada uno desde su
-  // carpeta con AGREGAR A PLAYLIST -> la playlist ya existente. El orden de
-  // insercion queda IDEA, BEAT_V3, LOOP_128BPM.
+  // Builds its own three-track playlist, adding each one from the flat list
+  // with ADD TO PLAYLIST. Insertion order ends up idea, beat_v3, loop_128bpm.
   await page.keyboard.press('Home')
-  await rows.filter({ hasText: 'CARPETAS' }).click()
-  await rows.filter({ hasText: 'DEMOS' }).click()
+  await rows.filter({ hasText: 'ALL TRACKS' }).click()
   await rows.filter({ hasText: 'idea_140bpm' }).click({ button: 'right' })
-  await rows.filter({ hasText: 'AGREGAR A PLAYLIST' }).click()
-  await rows.filter({ hasText: '+ NUEVA PLAYLIST' }).click()
-  await page.keyboard.type('EP nuevo')
+  await rows.filter({ hasText: 'ADD TO PLAYLIST' }).click()
+  await rows.filter({ hasText: '+ NEW PLAYLIST' }).click()
+  await page.keyboard.type('New EP')
   await page.keyboard.press('Enter')
 
-  await page.keyboard.press('Home')
-  await rows.filter({ hasText: 'CARPETAS' }).click()
-  await rows.filter({ hasText: 'TRAP' }).click()
   await rows.filter({ hasText: 'beat_v3' }).click({ button: 'right' })
-  await rows.filter({ hasText: 'AGREGAR A PLAYLIST' }).click()
-  await rows.filter({ hasText: 'EP NUEVO' }).click()
+  await rows.filter({ hasText: 'ADD TO PLAYLIST' }).click()
+  await rows.filter({ hasText: 'NEW EP' }).click()
 
-  await page.keyboard.press('Home')
-  await rows.filter({ hasText: 'CARPETAS' }).click()
-  await rows.filter({ hasText: 'HOUSE' }).click()
   await rows.filter({ hasText: 'loop_128bpm' }).click({ button: 'right' })
-  await rows.filter({ hasText: 'AGREGAR A PLAYLIST' }).click()
-  await rows.filter({ hasText: 'EP NUEVO' }).click()
+  await rows.filter({ hasText: 'ADD TO PLAYLIST' }).click()
+  await rows.filter({ hasText: 'NEW EP' }).click()
 
   await page.keyboard.press('Home')
   await rows.filter({ hasText: 'PLAYLISTS' }).click()
-  await rows.filter({ hasText: 'EP NUEVO' }).click()
-  await expect(page.getByTestId('screen-title')).toHaveText('EP NUEVO')
-  // Se espera el contenido real de ESTA vista (no solo la cantidad de filas):
-  // el titulo cambia en el mismo render que el `dispatch`, pero las filas
-  // tardan un tick mas en cargar por IPC, y mientras tanto podrian quedar
-  // dibujadas las tres filas de la vista PLAYLISTS anterior (+ NUEVA
-  // PLAYLIST y las dos playlists), que por casualidad tambien suman 3.
+  await rows.filter({ hasText: 'NEW EP' }).click()
+  await expect(page.getByTestId('screen-title')).toHaveText('NEW EP')
+  // Waits for the real content of THIS view, not just a row count: the title
+  // changes in the same render as the dispatch, but the rows take another tick
+  // to arrive over IPC, and until then the three rows of the previous PLAYLISTS
+  // view (+ NEW PLAYLIST and the two playlists) could still be drawn -- which
+  // happen to also add up to 3.
   await expect(rows.nth(0)).toHaveText(/idea_140bpm/)
   await expect(rows.nth(1)).toHaveText(/beat_v3/)
   await expect(rows.nth(2)).toHaveText(/loop_128bpm/)
   await expect(rows).toHaveCount(3)
 
-  // MOVER: agarra la primera fila (idea_140bpm) y la lleva al final.
+  // MOVE: grab the first row (idea_140bpm) and take it to the end.
   await rows.filter({ hasText: 'idea_140bpm' }).click({ button: 'right' })
-  await expect(page.getByTestId('screen-title')).toHaveText('ACCIONES')
-  await rows.filter({ hasText: 'MOVER' }).click()
+  await expect(page.getByTestId('screen-title')).toHaveText('ACTIONS')
+  await rows.filter({ hasText: /^MOVE$/ }).click()
 
   await expect(page.getByTestId('moving-banner')).toBeVisible()
   await page.keyboard.press('ArrowDown')
@@ -152,14 +153,14 @@ test('MOVER reordena una playlist y el nuevo orden se reproduce', async () => {
   await page.keyboard.press('Enter')
   await expect(page.getByTestId('moving-banner')).not.toBeVisible()
 
-  // El nuevo orden viene de releer la playlist por IPC (no es un cambio
-  // solo visual): confirma que `movePlaylistItem` persistio el reordenamiento.
+  // The new order comes from re-reading the playlist over IPC (it is not just a
+  // visual change): this confirms `movePlaylistItem` persisted the reordering.
   await expect(rows.nth(0)).toHaveText(/beat_v3/)
   await expect(rows.nth(1)).toHaveText(/loop_128bpm/)
   await expect(rows.nth(2)).toHaveText(/idea_140bpm/)
   await expect(rows).toHaveCount(3)
 
-  // Reproducirla arranca por la primera pista del orden NUEVO.
+  // Playing it starts from the first track of the NEW order.
   await rows.first().click()
   await expect(page.getByTestId('now-playing')).toBeVisible()
   await expect(page.getByTestId('np-title')).toHaveText(/beat_v3/)

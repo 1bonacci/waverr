@@ -9,11 +9,12 @@
 
 export type MenuId =
   | 'root'
-  | 'folders'
+  /** The whole library as one flat list. There is no folder browsing. */
+  | 'tracks'
   | 'recent'
   | 'favorites'
   | 'playlists'
-  /** Submenu de "AGREGAR A PLAYLIST". */
+  /** Submenu of "ADD TO PLAYLIST". */
   | 'playlistPicker'
   | 'settings'
 
@@ -66,7 +67,6 @@ export interface MovingState {
 
 export type View =
   | { kind: 'menu'; menu: MenuId; selected: number }
-  | { kind: 'folder'; path: string; name: string; selected: number }
   | { kind: 'search'; query: string; selected: number }
   | { kind: 'queue'; selected: number; moving: MovingState | null }
   | { kind: 'playlist'; playlistId: number; name: string; selected: number; moving: MovingState | null }

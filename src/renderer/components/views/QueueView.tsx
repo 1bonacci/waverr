@@ -16,7 +16,7 @@ export function QueueView({ controller }: QueueViewProps): JSX.Element {
     <div className={styles.view}>
       {moving && (
         <div className={styles.movingBanner} data-testid="moving-banner">
-          MOVIENDO · OK SUELTA · MENU CANCELA
+          MOVING · OK DROPS · MENU CANCELS
         </div>
       )}
       <ListView controller={controller} />

@@ -14,7 +14,6 @@ export const IPC = {
   libraryRemoveRoot: 'library:removeRoot',
   libraryRescan: 'library:rescan',
   librarySearch: 'library:search',
-  libraryListFolders: 'library:listFolders',
   libraryListTracks: 'library:listTracks',
   libraryGetTrack: 'library:getTrack',
   libraryStats: 'library:stats',
@@ -82,14 +81,6 @@ export interface Track {
   favorite: boolean
 }
 
-export interface FolderEntry {
-  /** Ruta absoluta de la carpeta. */
-  path: string
-  /** Nombre para mostrar en la pantalla. */
-  name: string
-  trackCount: number
-}
-
 export interface Playlist {
   id: number
   name: string
@@ -138,7 +129,12 @@ export interface TrackQuery {
   folderPath?: string
   onlyFavorites?: boolean
   includeMissing?: boolean
-  sort?: 'relevance' | 'recent' | 'name'
+  /**
+   * `folder` groups tracks by their containing folder and sorts A-Z inside
+   * each group. It is what the flat ALL TRACKS list uses: one scrollable list,
+   * but files from the same session stay together.
+   */
+  sort?: 'relevance' | 'recent' | 'name' | 'folder'
   limit?: number
   offset?: number
 }
@@ -157,7 +153,6 @@ export interface WaverrApi {
     removeRoot(rootId: number): Promise<void>
     rescan(): Promise<ScanResult[]>
     search(query: TrackQuery): Promise<Track[]>
-    listFolders(): Promise<FolderEntry[]>
     listTracks(query: TrackQuery): Promise<Track[]>
     getTrack(trackId: number): Promise<Track | null>
     stats(): Promise<LibraryStats>

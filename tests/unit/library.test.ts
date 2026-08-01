@@ -239,16 +239,30 @@ describe('favoritos', () => {
   })
 })
 
-describe('carpetas', () => {
-  it('lista carpetas distintas con su conteo', async () => {
+describe('orden agrupado por carpeta', () => {
+  it('agrupa por carpeta y ordena A-Z adentro de cada grupo', async () => {
     const { library } = await setupLibrary(SAMPLE_FILES)
 
-    const folders = library.listFolders()
-    expect(folders.map((folder) => `${folder.name}:${folder.trackCount}`).sort()).toEqual([
-      'demos:2',
-      'house:1',
-      'trap:2'
+    const tracks = library.search({ sort: 'folder' })
+
+    // Una sola lista plana, pero las pistas de una misma carpeta quedan juntas
+    // y en orden. Es lo que hace navegable a ALL TRACKS sin carpetas.
+    expect(tracks.map((track) => `${track.folder}/${track.filename}`)).toEqual([
+      'demos/idea_140bpm.wav',
+      'demos/voz cruda.wav',
+      'house/loop_128bpm.wav',
+      'trap/beat_v3.wav',
+      'trap/beat_v7_final.wav'
     ])
+  })
+
+  it('no intercala carpetas: cada una aparece en un solo bloque', async () => {
+    const { library } = await setupLibrary(SAMPLE_FILES)
+
+    const folders = library.search({ sort: 'folder' }).map((track) => track.folder)
+    const blocks = folders.filter((folder, index) => folder !== folders[index - 1])
+
+    expect(blocks).toEqual([...new Set(folders)])
   })
 })
 
