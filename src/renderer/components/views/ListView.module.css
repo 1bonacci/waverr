@@ -72,6 +72,17 @@
   opacity: 0.6;
 }
 
+/* Rotulo de seccion (AHORA/SIGUIENTE/LUEGO) en la vista COLA: no es una
+   fila, no se selecciona, solo separa visualmente los tres origenes de lo
+   que suena. */
+.sectionHeader {
+  flex: 0 0 auto;
+  padding: 4px 8px 1px;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--lcd-ink-dim);
+}
+
 .empty {
   flex: 1;
   display: grid;

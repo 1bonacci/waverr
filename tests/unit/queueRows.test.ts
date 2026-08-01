@@ -4,6 +4,7 @@ import {
   buildQueueRows,
   isMovableRow,
   manualIndexForDrop,
+  resolveManualIndexById,
   type QueueRow
 } from '../../src/renderer/screen/queueRows'
 
@@ -131,5 +132,25 @@ describe('manualIndexForDrop', () => {
     const rows = buildQueueRows({ now, manual: [m0, m1], upcoming: [] })
     expect(manualIndexForDrop(rows, 99)).toBe(2)
     expect(manualIndexForDrop(rows, -1)).toBe(2)
+  })
+})
+
+describe('resolveManualIndexById', () => {
+  it('encuentra el indice de manual actual aunque la lista se haya reconstruido', () => {
+    // Estado al agarrar la fila: AHORA=now, MANUAL=[m0, m1, m2]. Se agarra m2.
+    const before = buildQueueRows({ now, manual: [m0, m1, m2], upcoming: [] })
+    expect(resolveManualIndexById(before, m2.id)).toBe(2)
+
+    // Mientras se arrastra termina la pista que sonaba: se consume m0 (pasa a
+    // ser AHORA) y la cola manual queda mas corta. El indice de fila de m2
+    // cambio (de 3 a 2 con AHORA presente), pero su identidad sigue
+    // resolviendo al indice de manual correcto.
+    const after = buildQueueRows({ now: m0, manual: [m1, m2], upcoming: [] })
+    expect(resolveManualIndexById(after, m2.id)).toBe(1)
+  })
+
+  it('si la pista agarrada se consumio sola, no hay donde resolverla', () => {
+    const rows = buildQueueRows({ now: m0, manual: [m1, m2], upcoming: [] })
+    expect(resolveManualIndexById(rows, m0.id)).toBeNull()
   })
 })

@@ -27,7 +27,15 @@ const FIXTURES = [
   // compartieran nombre con beat_v3/loop_128bpm, la vista COLA las mostraria
   // dos veces y los `hasText` de las aserciones dejarian de ser unicos).
   'upcoming/context_a.wav',
-  'upcoming/context_b.wav'
+  'upcoming/context_b.wav',
+  // Carpeta aparte para el test de soltar con click: tres pistas propias,
+  // para no depender de cuantas otras cosas haya quedado encoladas por los
+  // tests anteriores (esos ya mutaron la cola manual y, con los fixtures
+  // sonando de fondo, una pista puede terminar sola entre un test y el
+  // siguiente y consumir la cola).
+  'dragtest/drag_a.wav',
+  'dragtest/drag_b.wav',
+  'dragtest/drag_c.wav'
 ]
 
 /** Los fixtures duran lo suficiente como para observarlos sonando. */
@@ -228,7 +236,7 @@ test('MOVER reordena la cola manual y LUEGO nunca lo ofrece', async () => {
   const after = await rows.allTextContents()
   const beatAfter = after.findIndex((text) => text.includes('beat_v3'))
   const loopAfter = after.findIndex((text) => text.includes('loop_128bpm'))
-  // Se soltó una fila más abajo: loop_128bpm paso a la punta de la cola
+  // Se solto una fila mas abajo: loop_128bpm paso a la punta de la cola
   // manual y beat_v3 quedo justo despues.
   expect(loopAfter).toBeLessThan(beatAfter)
 
@@ -298,4 +306,85 @@ test('nombre de playlist repetido en GUARDAR COMO PLAYLIST avisa y no crea otra'
 
   const after = await page.evaluate(() => window.waverr.library.listPlaylists())
   expect(after.filter((playlist) => playlist.name === 'Sesion buena').length).toBe(1)
+})
+
+test('soltar con click en modo mover reordena la cola y no la mutila', async () => {
+  const rows = page.getByTestId('screen-row')
+
+  // No asume nada de lo que dejaron los tests anteriores en la cola: con los
+  // fixtures sonando de fondo, una pista puede terminar sola entre un test y
+  // el siguiente (el escenario de Important 4) y correr todo lo que este
+  // encolado. Por eso esta prueba usa tres pistas propias (DRAGTEST) y
+  // compara posiciones relativas entre ellas, nunca indices absolutos de
+  // fila ni una cantidad total de filas.
+  //
+  // Pausa antes de tocar nada: si sigue sonando, la pista actual podria
+  // terminar a mitad de esta prueba y consumir la cola manual sola,
+  // ensuciando una comparacion que es sobre otra cosa (el click, no el
+  // avance automatico).
+  await page.keyboard.press('Home')
+  const status = await page.getByTestId('screen-status').textContent()
+  if (status?.includes('▶')) {
+    await page.keyboard.press('Space')
+    await expect(page.getByTestId('screen-status')).toHaveText('||')
+  }
+
+  await rows.filter({ hasText: 'CARPETAS' }).click()
+  await rows.filter({ hasText: 'DRAGTEST' }).click()
+  await rows.filter({ hasText: 'drag_a' }).click({ button: 'right' })
+  await rows.filter({ hasText: 'ENCOLAR AL FINAL' }).click()
+  await rows.filter({ hasText: 'drag_b' }).click({ button: 'right' })
+  await rows.filter({ hasText: 'ENCOLAR AL FINAL' }).click()
+  await rows.filter({ hasText: 'drag_c' }).click({ button: 'right' })
+  await rows.filter({ hasText: 'ENCOLAR AL FINAL' }).click()
+
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'COLA' }).click()
+  await expect(page.getByTestId('screen-title')).toHaveText('COLA')
+
+  // Se encolaron en orden a, b, c: quedan asi, consecutivas, sin importar
+  // cuantas otras filas haya antes (la fila AHORA siempre esta primera si
+  // hay algo sonando).
+  const before = await rows.allTextContents()
+  const nowBefore = before[0]
+  const indexA0 = before.findIndex((text) => text.includes('drag_a'))
+  const indexB0 = before.findIndex((text) => text.includes('drag_b'))
+  const indexC0 = before.findIndex((text) => text.includes('drag_c'))
+  expect(indexA0).toBeGreaterThanOrEqual(0)
+  expect(indexB0).toBe(indexA0 + 1)
+  expect(indexC0).toBe(indexB0 + 1)
+
+  // Agarra la primera de las tres (drag_a) con MOVER.
+  await rows.filter({ hasText: 'drag_a' }).click({ button: 'right' })
+  await expect(page.getByTestId('screen-title')).toHaveText('ACCIONES')
+  await rows.filter({ hasText: 'MOVER' }).click()
+  await expect(page.getByTestId('moving-banner')).toBeVisible()
+
+  // Suelta con CLICK (no con OK ni con las flechas) sobre la fila de
+  // drag_c. Antes de este arreglo, un click durante el arrastre ejecutaba la
+  // activacion normal de la fila tocada (saltar a esa pista) en vez de
+  // soltar ahi: la pantalla se hubiera ido a REPRODUCIENDO con drag_c
+  // sonando, y de paso corrido `removeFromQueue(0)` en bucle, mutilando todo
+  // lo que estaba encolado antes.
+  await rows.filter({ hasText: 'drag_c' }).click()
+  await expect(page.getByTestId('moving-banner')).not.toBeVisible()
+
+  // Sigue en COLA (no se fue a REPRODUCIENDO) y AHORA no cambio: el click se
+  // interpreto como "soltar ahi", no como "reproducir esta pista ahora".
+  await expect(page.getByTestId('screen-title')).toHaveText('COLA')
+  await expect(page.getByTestId('now-playing')).not.toBeVisible()
+  const after = await rows.allTextContents()
+  expect(after[0]).toBe(nowBefore)
+
+  // Las tres siguen estando, ninguna se perdio ni se duplico, y quedaron en
+  // el orden que produce mover drag_a al final de la cola manual: b, c, a.
+  const indexA1 = after.findIndex((text) => text.includes('drag_a'))
+  const indexB1 = after.findIndex((text) => text.includes('drag_b'))
+  const indexC1 = after.findIndex((text) => text.includes('drag_c'))
+  expect(after.filter((text) => text.includes('drag_a'))).toHaveLength(1)
+  expect(after.filter((text) => text.includes('drag_b'))).toHaveLength(1)
+  expect(after.filter((text) => text.includes('drag_c'))).toHaveLength(1)
+  expect(indexB1).toBeGreaterThanOrEqual(0)
+  expect(indexC1).toBe(indexB1 + 1)
+  expect(indexA1).toBe(indexC1 + 1)
 })

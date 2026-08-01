@@ -1,4 +1,4 @@
-import { useEffect, useRef, type JSX, type RefObject } from 'react'
+import { Fragment, useEffect, useRef, type JSX, type RefObject } from 'react'
 import type { ScreenController, ScreenItem } from '../../screen/useScreen'
 import { useLongPress } from '../../screen/useLongPress'
 import styles from './ListView.module.css'
@@ -31,15 +31,19 @@ export function ListView({ controller }: ListViewProps): JSX.Element {
   return (
     <div className={styles.list} data-testid="screen-list">
       {items.map((item, index) => (
-        <Row
-          key={item.key}
-          item={item}
-          index={index}
-          selected={index === selected}
-          moving={index === movingTo}
-          controller={controller}
-          rowRef={index === selected ? selectedRef : undefined}
-        />
+        <Fragment key={item.key}>
+          {item.sectionHeader && (
+            <div className={styles.sectionHeader}>{item.sectionHeader}</div>
+          )}
+          <Row
+            item={item}
+            index={index}
+            selected={index === selected}
+            moving={index === movingTo}
+            controller={controller}
+            rowRef={index === selected ? selectedRef : undefined}
+          />
+        </Fragment>
       ))}
     </div>
   )
@@ -60,8 +64,19 @@ function Row({
   controller: ScreenController
   rowRef?: RefObject<HTMLButtonElement | null>
 }): JSX.Element {
+  // Con una fila agarrada en modo mover, clickear cualquier fila la suelta
+  // ahi en vez de activarla: activar una fila de la cola manual mientras se
+  // esta moviendo corria (y mutilaba) la cola, porque `item.activate()` no
+  // sabe nada de que hay un arrastre en curso.
+  const { view } = controller
+  const isMoving = (view.kind === 'queue' || view.kind === 'playlist') && view.moving !== null
+
   const press = useLongPress(
     () => {
+      if (isMoving) {
+        controller.dropAt(index)
+        return
+      }
       controller.dispatch({ type: 'setSelection', index })
       void item.activate()
     },

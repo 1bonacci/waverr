@@ -67,3 +67,25 @@ export function manualIndexForDrop(rows: QueueRow[], rowIndex: number): number {
 
   return rows.filter(isMovableRow).length
 }
+
+/**
+ * Encuentra, por identidad, el indice dentro de la cola manual de la pista
+ * `trackId`.
+ *
+ * Se usa para resolver el origen de un arrastre cuando la lista se
+ * reconstruyo mientras se sostenia una fila: si una pista termina durante el
+ * movimiento, se consume el primer elemento de la cola manual y todos los
+ * indices de fila corren. El indice de fila que se guardo al agarrar la fila
+ * deja de servir, pero la identidad de la pista agarrada sigue siendo
+ * valida.
+ *
+ * Devuelve null si esa pista ya no esta en la cola manual (se consumio sola
+ * mientras se arrastraba).
+ */
+export function resolveManualIndexById(rows: QueueRow[], trackId: number): number | null {
+  const row = rows.find(
+    (candidate): candidate is Extract<QueueRow, { section: 'manual' }> =>
+      candidate.section === 'manual' && candidate.track.id === trackId
+  )
+  return row ? row.manualIndex : null
+}

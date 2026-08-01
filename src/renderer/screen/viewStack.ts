@@ -38,10 +38,16 @@ export type PromptIntent =
   | { kind: 'renamePlaylist'; playlistId: number }
   | { kind: 'saveQueue' }
 
-/** Fila agarrada en modo mover: de donde salio y donde esta ahora. */
+/** Fila agarrada en modo mover: de donde salio y donde esta ahora.
+ *  `originId` es la identidad de la pista agarrada (su trackId en la cola,
+ *  su itemId en una playlist), no su posicion: si la lista se reconstruye
+ *  mientras se esta arrastrando (una pista que termina consume la cola
+ *  manual y corre los indices de fila), `from`/`to` quedan desactualizados
+ *  pero `originId` sigue apuntando a la fila correcta. */
 export interface MovingState {
   from: number
   to: number
+  originId: number
 }
 
 export type View =
@@ -68,9 +74,12 @@ export type ScreenAction =
   | { type: 'openNowPlaying' }
   | { type: 'typeChar'; char: string }
   | { type: 'backspace' }
-  | { type: 'startMove' }
+  | { type: 'startMove'; originId: number }
   | { type: 'moveHeld'; delta: number; itemCount: number }
-  | { type: 'dropMove' }
+  /** `to`, si viene, fija donde termino el arrastre (clickear una fila con el
+   *  mouse suelta ahi directo, sin pasar por `moveHeld`). Sin `to` usa la
+   *  posicion ya guardada en `moving` (soltar con teclado/rueda). */
+  | { type: 'dropMove'; to?: number }
   | { type: 'cancelMove' }
   | { type: 'confirmPrompt' }
 
@@ -172,7 +181,10 @@ export function screenReducer(state: ScreenState, action: ScreenAction): ScreenS
     case 'startMove': {
       if (view.kind !== 'queue' && view.kind !== 'playlist') return state
       if (view.moving) return state
-      return replaceTop(state, { ...view, moving: { from: view.selected, to: view.selected } })
+      return replaceTop(state, {
+        ...view,
+        moving: { from: view.selected, to: view.selected, originId: action.originId }
+      })
     }
 
     case 'moveHeld': {
@@ -185,7 +197,8 @@ export function screenReducer(state: ScreenState, action: ScreenAction): ScreenS
     case 'dropMove': {
       if (view.kind !== 'queue' && view.kind !== 'playlist') return state
       if (!view.moving) return state
-      return replaceTop(state, { ...view, moving: null, selected: view.moving.to })
+      const to = action.to ?? view.moving.to
+      return replaceTop(state, { ...view, moving: null, selected: to })
     }
 
     case 'cancelMove': {

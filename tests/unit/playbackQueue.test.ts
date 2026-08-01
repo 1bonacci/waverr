@@ -10,7 +10,8 @@ import {
   previous,
   queueView,
   removeAt,
-  setShuffle
+  setShuffle,
+  skipToManual
 } from '../../src/renderer/audio/playbackQueue'
 
 function makeTrack(id: number, filename = `track_${id}.wav`): Track {
@@ -174,6 +175,38 @@ describe('editar la cola manual', () => {
     const state = enqueue(enqueue(EMPTY_QUEUE, a), b)
     expect(move(state, 0, -5).manual).toEqual([a, b])
     expect(move(state, 0, 99).manual).toEqual([b, a])
+  })
+})
+
+describe('skipToManual', () => {
+  it('la pista elegida pasa a sonar y las anteriores quedan para despues', () => {
+    const state = enqueue(enqueue(enqueue(EMPTY_QUEUE, a), b), c)
+    const next = skipToManual(state, 2)
+    expect(next.current).toBe(c)
+    // a y b (las que estaban antes de c) siguen en la cola manual, en el
+    // mismo orden: no se pierden por haber saltado por encima de ellas.
+    expect(next.manual).toEqual([a, b])
+  })
+
+  it('saltar a la primera pista de la cola manual la deja sin nada por delante', () => {
+    const state = enqueue(enqueue(EMPTY_QUEUE, a), b)
+    const next = skipToManual(state, 0)
+    expect(next.current).toBe(a)
+    expect(next.manual).toEqual([b])
+  })
+
+  it('descarta lo que sonaba antes del salto, como cualquier avance', () => {
+    let state = playNow(EMPTY_QUEUE, [d], 0)
+    state = enqueue(enqueue(state, a), b)
+    const next = skipToManual(state, 1)
+    expect(next.current).toBe(b)
+    expect(next.manual).toEqual([a])
+  })
+
+  it('un indice fuera de rango no hace nada', () => {
+    const state = enqueue(EMPTY_QUEUE, a)
+    expect(skipToManual(state, 7)).toEqual(state)
+    expect(skipToManual(state, -1)).toEqual(state)
   })
 })
 

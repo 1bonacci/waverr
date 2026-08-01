@@ -11,6 +11,7 @@ import {
   queueView,
   removeAt,
   setShuffle as setShuffleState,
+  skipToManual as skipToManualState,
   type QueueState,
   type QueueView,
   type RepeatMode
@@ -161,12 +162,15 @@ export class AudioEngine {
     return queueView(this.queue)
   }
 
-  clearQueue(): void {
-    this.queue = EMPTY_QUEUE
-    this.audio.pause()
-    this.audio.removeAttribute('src')
-    this.audio.load()
-    this.patch({ ...INITIAL_STATE, volume: this.state.volume })
+  /**
+   * Salta directo a una pista de la cola manual. Las que quedaron antes de
+   * ella en la cola no se pierden: siguen ahi, listas para sonar despues.
+   */
+  async skipToManual(index: number): Promise<void> {
+    const nextQueue = skipToManualState(this.queue, index)
+    if (nextQueue === this.queue) return
+    this.queue = nextQueue
+    await this.loadCurrent()
   }
 
   // --- Transporte -------------------------------------------------------

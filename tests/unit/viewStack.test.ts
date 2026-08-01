@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+﻿import { describe, expect, it } from 'vitest'
 import {
   currentView,
   INITIAL_SCREEN_STATE,
@@ -182,14 +182,14 @@ describe('modo mover', () => {
   const queueView = { kind: 'queue' as const, selected: 1, moving: null }
 
   it('empezar a mover agarra la fila seleccionada', () => {
-    const state = run([{ type: 'push', view: queueView }, { type: 'startMove' }])
+    const state = run([{ type: 'push', view: queueView }, { type: 'startMove', originId: 99 }])
     expect(currentView(state)).toMatchObject({ moving: { from: 1, to: 1 } })
   })
 
   it('mover arrastra la fila y la seleccion juntas', () => {
     const state = run([
       { type: 'push', view: queueView },
-      { type: 'startMove' },
+      { type: 'startMove', originId: 99 },
       { type: 'moveHeld', delta: 1, itemCount: 4 }
     ])
     expect(currentView(state)).toMatchObject({ moving: { from: 1, to: 2 }, selected: 2 })
@@ -198,7 +198,7 @@ describe('modo mover', () => {
   it('mover satura en los extremos en vez de envolver', () => {
     const state = run([
       { type: 'push', view: queueView },
-      { type: 'startMove' },
+      { type: 'startMove', originId: 99 },
       { type: 'moveHeld', delta: -5, itemCount: 4 }
     ])
     expect(currentView(state)).toMatchObject({ moving: { from: 1, to: 0 }, selected: 0 })
@@ -207,7 +207,7 @@ describe('modo mover', () => {
   it('soltar termina el modo mover', () => {
     const state = run([
       { type: 'push', view: queueView },
-      { type: 'startMove' },
+      { type: 'startMove', originId: 99 },
       { type: 'moveHeld', delta: 1, itemCount: 4 },
       { type: 'dropMove' }
     ])
@@ -217,7 +217,7 @@ describe('modo mover', () => {
   it('cancelar devuelve la seleccion a donde estaba', () => {
     const state = run([
       { type: 'push', view: queueView },
-      { type: 'startMove' },
+      { type: 'startMove', originId: 99 },
       { type: 'moveHeld', delta: 2, itemCount: 4 },
       { type: 'cancelMove' }
     ])
@@ -227,7 +227,7 @@ describe('modo mover', () => {
   it('MENU no sale de la vista mientras se esta moviendo', () => {
     const state = run([
       { type: 'push', view: queueView },
-      { type: 'startMove' },
+      { type: 'startMove', originId: 99 },
       { type: 'moveHeld', delta: 2, itemCount: 4 },
       { type: 'back' }
     ])
@@ -238,8 +238,23 @@ describe('modo mover', () => {
   })
 
   it('startMove no hace nada en una vista que no se reordena', () => {
-    const state = run([{ type: 'startMove' }])
+    const state = run([{ type: 'startMove', originId: 99 }])
     expect(state).toEqual(INITIAL_SCREEN_STATE)
+  })
+
+  it('startMove guarda la identidad de la fila agarrada, no solo su posicion', () => {
+    const state = run([{ type: 'push', view: queueView }, { type: 'startMove', originId: 42 }])
+    expect(currentView(state)).toMatchObject({ moving: { originId: 42 } })
+  })
+
+  it('dropMove con `to` explicito suelta ahi, como hace un click', () => {
+    const state = run([
+      { type: 'push', view: queueView },
+      { type: 'startMove', originId: 99 },
+      { type: 'moveHeld', delta: 1, itemCount: 4 },
+      { type: 'dropMove', to: 3 }
+    ])
+    expect(currentView(state)).toMatchObject({ moving: null, selected: 3 })
   })
 })
 

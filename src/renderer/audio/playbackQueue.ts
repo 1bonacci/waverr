@@ -77,6 +77,23 @@ export function removeAt(state: QueueState, index: number): QueueState {
   return { ...state, manual }
 }
 
+/**
+ * Salta directo a una pista de la cola manual sin descartar las que quedaron
+ * antes de ella.
+ *
+ * Elegirla la pone a sonar; las que estaban delante en la cola manual (mas
+ * cerca del frente) siguen ahi, listas para sonar despues: lo que el usuario
+ * encolo a proposito no se pierde por elegir escuchar antes otra cosa que
+ * tambien habia encolado. `index` fuera de rango no hace nada.
+ */
+export function skipToManual(state: QueueState, index: number): QueueState {
+  if (index < 0 || index >= state.manual.length) return state
+  const manual = [...state.manual]
+  const [chosen] = manual.splice(index, 1)
+  if (!chosen) return state
+  return { ...state, current: chosen, manual }
+}
+
 /** Mueve dentro de la cola manual. Satura en los extremos: envolver al
  *  reordenar casi siempre es un error de dedo, no una intencion. */
 export function move(state: QueueState, from: number, to: number): QueueState {
