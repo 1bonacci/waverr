@@ -160,8 +160,10 @@ test('MOVE reorders a playlist and the new order is what plays', async () => {
   await expect(rows.nth(2)).toHaveText(/idea_140bpm/)
   await expect(rows).toHaveCount(3)
 
-  // Playing it starts from the first track of the NEW order.
+  // Playing it starts from the first track of the NEW order. Selecting a track
+  // does not leave the list, so the visualizer is opened from the header.
   await rows.first().click()
+  await page.getByTestId('now-playing-button').click()
   await expect(page.getByTestId('now-playing')).toBeVisible()
   await expect(page.getByTestId('np-title')).toHaveText(/beat_v3/)
 })

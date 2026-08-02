@@ -3,6 +3,9 @@
   width: 100%;
   padding: 10px;
   background: var(--chassis-edge);
+  /* The window is frameless and transparent, so this rounding is what the
+     desktop actually sees at the corners of the app. */
+  border-radius: var(--chassis-outer-radius);
   display: flex;
 }
 

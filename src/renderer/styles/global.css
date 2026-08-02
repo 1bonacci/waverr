@@ -13,7 +13,9 @@ body,
 }
 
 body {
-  background: var(--chassis-bg);
+  /* Transparent so the rounded corners of .shell show the desktop through
+     them instead of a square of chassis colour. */
+  background: transparent;
   color: var(--btn-ink);
   font-family: var(--font-ui);
   /* The app is a device, not a page: no text selection, no context menu. */

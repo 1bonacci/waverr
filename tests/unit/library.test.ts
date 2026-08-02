@@ -59,6 +59,61 @@ describe('roots', () => {
   })
 })
 
+describe('hidden tracks', () => {
+  it('a hidden track disappears from the lists but keeps its row', async () => {
+    const { library } = await setupLibrary(SAMPLE_FILES)
+    const target = library.search({ query: 'idea' })[0]!
+
+    library.setTrackHidden(target.id, true)
+
+    expect(library.search({ query: 'idea' })).toHaveLength(0)
+    expect(library.search({ sort: 'name' })).toHaveLength(SAMPLE_FILES.length - 1)
+    expect(library.getTrack(target.id)?.hidden).toBe(true)
+  })
+
+  it('lists what is hidden, and restores it', async () => {
+    const { library } = await setupLibrary(SAMPLE_FILES)
+    const target = library.search({ query: 'idea' })[0]!
+
+    library.setTrackHidden(target.id, true)
+    const hidden = library.search({ onlyHidden: true })
+    expect(hidden).toHaveLength(1)
+    expect(hidden[0]!.id).toBe(target.id)
+
+    library.setTrackHidden(target.id, false)
+    expect(library.search({ onlyHidden: true })).toHaveLength(0)
+    expect(library.search({ query: 'idea' })).toHaveLength(1)
+  })
+
+  it('stays hidden after a rescan finds the file again', async () => {
+    // The reason hiding is a flag and not a DELETE: the file is still sitting
+    // under a watched root, so a deleted row would simply be re-inserted as a
+    // brand new track on the next scan.
+    const { library } = await setupLibrary(SAMPLE_FILES)
+    const target = library.search({ query: 'idea' })[0]!
+
+    library.setTrackHidden(target.id, true)
+    await library.scanAll()
+
+    expect(library.search({ query: 'idea' })).toHaveLength(0)
+    expect(library.search({ onlyHidden: true })).toHaveLength(1)
+    // Same row, so favorites and playlist positions survived with it.
+    expect(library.search({ onlyHidden: true })[0]!.id).toBe(target.id)
+  })
+
+  it('keeps a hidden track out of the totals', async () => {
+    const { library } = await setupLibrary(SAMPLE_FILES)
+    const target = library.search({ query: 'idea' })[0]!
+
+    expect(library.stats().trackCount).toBe(SAMPLE_FILES.length)
+    library.setTrackHidden(target.id, true)
+
+    const stats = library.stats()
+    expect(stats.trackCount).toBe(SAMPLE_FILES.length - 1)
+    expect(stats.hiddenCount).toBe(1)
+  })
+})
+
 describe('scanning', () => {
   it('indexes the whole tree and reads duration even with no tags', async () => {
     const { library } = await setupLibrary(SAMPLE_FILES)

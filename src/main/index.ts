@@ -29,9 +29,13 @@ function createWindow(): BrowserWindow {
     maximizable: false,
     fullscreenable: false,
     frame: false,
-    // Matches --chassis-edge in tokens.css: anything else flashes the wrong
-    // color before the renderer paints.
-    backgroundColor: '#c6c9cf',
+    // The chassis draws its own rounded corners, so the window behind it has
+    // to be see-through for them to read as corners rather than as a lighter
+    // shape on a grey square. The trade is that there is no opaque background
+    // colour left to cover the gap before the renderer's first paint; `show`
+    // is already false until `ready-to-show`, which is what hides it instead.
+    transparent: true,
+    backgroundColor: '#00000000',
     show: false,
     title: 'waverr',
     webPreferences: {

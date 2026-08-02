@@ -25,6 +25,7 @@ export interface TrackRow {
   last_played_at: number | null
   play_count: number
   missing: number
+  hidden: number
   favorite: number | null
 }
 
@@ -48,6 +49,7 @@ export function rowToTrack(row: TrackRow): Track {
     lastPlayedAt: row.last_played_at,
     playCount: row.play_count,
     missing: row.missing === 1,
+    hidden: row.hidden === 1,
     favorite: row.favorite === 1
   }
 }
@@ -156,6 +158,19 @@ const MIGRATIONS: readonly string[] = [
   );
 
   CREATE INDEX playlist_items_order ON playlist_items(playlist_id, position);
+  `
+  ,
+  // v3 - hidden tracks
+  //
+  // Scanning a folder of sessions pulls in stems, loops and one-shots along
+  // with the actual tracks. Deleting those rows does not work: the file is
+  // still on disk under a watched root, so the next scan finds it unknown and
+  // inserts it again with a new id, losing its marks on the way. Hiding is a
+  // flag on the row instead, which the scanner leaves alone -- the same shape
+  // as `missing`, and filtered out by the same queries.
+  `
+  ALTER TABLE tracks ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;
+  CREATE INDEX tracks_hidden_idx ON tracks(hidden) WHERE hidden = 1;
   `
 ]
 

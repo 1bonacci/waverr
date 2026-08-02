@@ -139,6 +139,9 @@ export class Library {
     }
 
     if (!query.includeMissing) conditions.push('t.missing = 0')
+    // Hidden tracks are pruned from every list unless they are what is being
+    // asked for, which is only the HIDDEN TRACKS screen.
+    conditions.push(query.onlyHidden ? 't.hidden = 1' : 't.hidden = 0')
     if (query.onlyFavorites) conditions.push('COALESCE(m.favorite, 0) = 1')
     if (query.folderPath) {
       conditions.push('t.dir = ?')
@@ -186,18 +189,37 @@ export class Library {
     return next === 1
   }
 
+  /**
+   * Hides a track from every list, or brings it back.
+   *
+   * The row survives, so favorites, playlist positions and play counts are
+   * still there when it is restored. The file is never touched: hiding is
+   * about what the library shows, not about what is on disk. The scanner
+   * leaves the flag alone, so this survives a rescan -- which deleting the row
+   * would not, since the file is still under a watched root and would simply
+   * be found again as new.
+   */
+  setTrackHidden(trackId: number, hidden: boolean): void {
+    this.db.prepare('UPDATE tracks SET hidden = ? WHERE id = ?').run(hidden ? 1 : 0, trackId)
+  }
+
   stats(): LibraryStats {
     const row = this.db
       .prepare(
+        // Hidden tracks are excluded from the totals for the same reason they
+        // are excluded from the lists: to the user they are not in the library.
         `SELECT
-           (SELECT COUNT(*) FROM tracks WHERE missing = 0)              AS track_count,
-           (SELECT COUNT(*) FROM tracks WHERE missing = 1)              AS missing_count,
-           (SELECT COUNT(*) FROM roots)                                 AS root_count,
-           (SELECT COALESCE(SUM(duration_ms), 0) FROM tracks WHERE missing = 0) AS total_duration_ms`
+           (SELECT COUNT(*) FROM tracks WHERE missing = 0 AND hidden = 0)  AS track_count,
+           (SELECT COUNT(*) FROM tracks WHERE missing = 1 AND hidden = 0)  AS missing_count,
+           (SELECT COUNT(*) FROM tracks WHERE hidden = 1)                  AS hidden_count,
+           (SELECT COUNT(*) FROM roots)                                    AS root_count,
+           (SELECT COALESCE(SUM(duration_ms), 0) FROM tracks
+             WHERE missing = 0 AND hidden = 0)                             AS total_duration_ms`
       )
       .get() as {
       track_count: number
       missing_count: number
+      hidden_count: number
       root_count: number
       total_duration_ms: number
     }
@@ -205,6 +227,7 @@ export class Library {
     return {
       trackCount: row.track_count,
       missingCount: row.missing_count,
+      hiddenCount: row.hidden_count,
       rootCount: row.root_count,
       totalDurationMs: row.total_duration_ms
     }

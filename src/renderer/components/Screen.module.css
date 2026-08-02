@@ -52,7 +52,10 @@
   color: var(--lcd-ink);
 }
 
+/* Takes the slack, so everything after it stays pinned to the right whether or
+   not the undo offer is showing. */
 .headerTitle {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -62,6 +65,52 @@
 .headerStatus {
   flex: 0 0 auto;
   color: var(--lcd-ink-dim);
+}
+
+.undo {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  font-family: inherit;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--lcd-accent);
+  cursor: pointer;
+}
+
+.undo:hover {
+  text-decoration: underline;
+}
+
+.nowPlaying {
+  flex: 0 0 auto;
+  padding: 0 2px;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--lcd-ink-dim);
+  cursor: pointer;
+}
+
+.nowPlaying:hover {
+  color: var(--lcd-accent);
+}
+
+.search {
+  flex: 0 0 auto;
+  /* The glyph is small and the header is thin, so the hit area is widened
+     rather than the icon. */
+  padding: 0 2px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--lcd-ink-dim);
+  cursor: pointer;
+}
+
+.search:hover {
+  color: var(--lcd-ink);
 }
 
 .body {

@@ -22,6 +22,7 @@ function makeTrack(id: number, missing = false): Track {
     lastPlayedAt: null,
     playCount: 0,
     missing,
+    hidden: false,
     favorite: false
   }
 }

@@ -135,7 +135,18 @@ export class AudioEngine {
    * plays after this.
    */
   async playNow(tracks: Track[], startIndex = 0): Promise<void> {
+    const wasPlaying = this.state.track
     this.queue = playNowState(this.queue, tracks, startIndex)
+
+    // Selecting the track that is already loaded means "take me to it", not
+    // "start it over": reloading would throw away the position someone is
+    // several minutes into. The context is still replaced above, so NEXT
+    // follows the list they picked it from either way.
+    if (wasPlaying && this.queue.current?.id === wasPlaying.id) {
+      this.publishQueue()
+      return
+    }
+
     await this.loadCurrent()
   }
 

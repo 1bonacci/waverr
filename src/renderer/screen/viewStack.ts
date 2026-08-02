@@ -16,6 +16,9 @@ export type MenuId =
   /** Submenu of "ADD TO PLAYLIST". */
   | 'playlistPicker'
   | 'settings'
+  /** Submenu of SETTINGS: the tracks hidden from the library, so hiding one by
+   *  mistake is not permanent. */
+  | 'hiddenTracks'
 
 /** Where the row the context menu was opened on came from. Determines which
  *  actions make sense: only inside the queue or a playlist can something be
@@ -86,7 +89,11 @@ export type ScreenAction =
   | { type: 'home' }
   | { type: 'openNowPlaying' }
   | { type: 'typeChar'; char: string }
-  | { type: 'backspace' }
+  /** `fromRepeat` marks a keyboard autorepeat tick. Deleting past the last
+   *  letter leaves the view, but only on a deliberate fresh press: holding
+   *  Backspace to clear a query would otherwise run straight through the empty
+   *  string and drop the user back in the menu. */
+  | { type: 'backspace'; fromRepeat?: boolean }
   | { type: 'startMove'; originId: number; originOccurrence: number }
   | { type: 'moveHeld'; delta: number; itemCount: number }
   /** `to`, when present, fixes where the drag ended (clicking a row with the
@@ -178,12 +185,17 @@ export function screenReducer(state: ScreenState, action: ScreenAction): ScreenS
 
     case 'backspace': {
       if (view.kind === 'prompt') {
-        if (view.value.length === 0) return screenReducer(state, { type: 'back' })
+        if (view.value.length === 0) {
+          return action.fromRepeat ? state : screenReducer(state, { type: 'back' })
+        }
         return replaceTop(state, { ...view, value: view.value.slice(0, -1) })
       }
       if (view.kind !== 'search') return state
-      // Deleting past the last letter of a search leaves the search.
-      if (view.query.length === 0) return screenReducer(state, { type: 'back' })
+      // Deleting past the last letter of a search leaves the search -- but a
+      // held key only ever empties it, never exits.
+      if (view.query.length === 0) {
+        return action.fromRepeat ? state : screenReducer(state, { type: 'back' })
+      }
       return replaceTop(state, { ...view, query: view.query.slice(0, -1), selected: 0 })
     }
 

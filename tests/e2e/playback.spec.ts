@@ -110,6 +110,21 @@ test('every file is reachable in one flat list, with its folder shown', async ()
   expect(labels[0]).toContain('demos')
 })
 
+/**
+ * Makes sure NOW PLAYING is on screen.
+ *
+ * Starting a track only plays it: the list stays put so browsing is not
+ * interrupted. The note in the header is the way to the visualizer. Selecting
+ * the track that is already playing goes there on its own, though, so this may
+ * find it already open -- and the note is hidden while it is.
+ */
+async function openNowPlaying(): Promise<void> {
+  if (!(await page.getByTestId('now-playing').isVisible())) {
+    await page.getByTestId('now-playing-button').click()
+  }
+  await expect(page.getByTestId('now-playing')).toBeVisible()
+}
+
 test('a track is reachable with two keypresses and no folder drilling', async () => {
   const rows = page.getByTestId('screen-row')
   await page.keyboard.press('Home')
@@ -120,7 +135,11 @@ test('a track is reachable with two keypresses and no folder drilling', async ()
   await expect(rows.first()).toHaveText(/\.wav/)
   await page.keyboard.press('Enter')
 
-  await expect(page.getByTestId('now-playing')).toBeVisible()
+  // Playing does not move the screen: still on the list, ready to keep browsing.
+  await expect(page.getByTestId('screen-title')).toHaveText('ALL TRACKS')
+  await expect(page.getByTestId('now-playing')).not.toBeVisible()
+
+  await openNowPlaying()
   await expect(page.getByTestId('np-title')).toHaveText(/\.wav$/)
 })
 
@@ -135,6 +154,7 @@ test('skipping forward crosses folder boundaries instead of stopping', async () 
   await rows.filter({ hasText: 'ALL TRACKS' }).click()
   await rows.filter({ hasText: 'idea_140bpm' }).click()
 
+  await openNowPlaying()
   await expect(page.getByTestId('np-title')).toHaveText('idea_140bpm.wav')
 
   await page.keyboard.press('ArrowRight')
@@ -236,7 +256,7 @@ test('MOVE reorders the manual queue and LATER never offers it', async () => {
   // NOW + LATER: context_a is second to last in the flat list, so playing it
   // leaves exactly one track (context_b) in LATER.
   await rows.filter({ hasText: 'context_a' }).click()
-  await expect(page.getByTestId('now-playing')).toBeVisible()
+  await expect(page.getByTestId('screen-status')).toHaveText(PLAYING, { timeout: 10000 })
 
   // QUEUE: NOW=context_a, MANUAL=[beat_v3, loop_128bpm], LATER=[context_b],
   // plus the SAVE AS PLAYLIST row at the end (5 in total).
@@ -310,7 +330,7 @@ test('SAVE AS PLAYLIST turns the queue into a playable playlist', async () => {
   await expect(rows).toHaveCount(4)
 
   await rows.first().click()
-  await expect(page.getByTestId('now-playing')).toBeVisible()
+  await expect(page.getByTestId('screen-status')).toHaveText(PLAYING, { timeout: 10000 })
 })
 
 test('a duplicate name in SAVE AS PLAYLIST warns and creates nothing', async () => {
@@ -412,4 +432,175 @@ test('dropping with a click in move mode reorders the queue without mangling it'
   expect(indexB1).toBeGreaterThanOrEqual(0)
   expect(indexC1).toBe(indexB1 + 1)
   expect(indexA1).toBe(indexC1 + 1)
+})
+
+test('holding Backspace clears the query without leaving the search', async () => {
+  await page.keyboard.press('Home')
+  await page.keyboard.type('bpm')
+  await expect(page.getByTestId('screen-title')).toHaveText(/SEARCH: BPM/)
+
+  // Holding the key to wipe what was typed must stop at the empty query rather
+  // than running straight through it and dropping the user back in the menu.
+  // `keyboard.down` fires a single keydown and never autorepeats, so the
+  // repeat ticks the OS would send are dispatched by hand: that stream, not a
+  // held physical key, is what the guard actually sees.
+  await page.keyboard.down('Backspace')
+  for (let tick = 0; tick < 8; tick += 1) {
+    await page.evaluate(() =>
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Backspace', repeat: true, bubbles: true })
+      )
+    )
+  }
+  await expect(page.getByTestId('screen-title')).toHaveText('SEARCH: _')
+  await page.keyboard.up('Backspace')
+
+  // A deliberate press after the hold still leaves.
+  await page.keyboard.press('Backspace')
+  await expect(page.getByTestId('screen-title')).toHaveText('WAVERR')
+})
+
+test('holding Enter opens the context menu instead of playing the track', async () => {
+  const rows = page.getByTestId('screen-row')
+
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'ALL TRACKS' }).click()
+  await expect(rows.first()).toHaveText(/\.wav/)
+
+  // A tap plays; a hold opens the actions for the row and must not play it.
+  await page.keyboard.down('Enter')
+  await expect(page.getByTestId('screen-title')).toHaveText('ACTIONS', { timeout: 10000 })
+  await page.keyboard.up('Enter')
+  await expect(page.getByTestId('now-playing')).not.toBeVisible()
+
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('screen-title')).toHaveText('ALL TRACKS')
+})
+
+test('the magnifying glass opens search, and +/- moves the volume', async () => {
+  const rows = page.getByTestId('screen-row')
+
+  await page.keyboard.press('Home')
+  await page.getByTestId('search-button').click()
+  await expect(page.getByTestId('screen-title')).toHaveText('SEARCH: _')
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('screen-title')).toHaveText('WAVERR')
+
+  // The engine's <audio> is never attached to the document, so the level is
+  // read where the slider reads it: off the rendered fill on NOW PLAYING.
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'ALL TRACKS' }).click()
+  await rows.first().click()
+  await openNowPlaying()
+
+  const track = page.getByTestId('volume')
+  const volume = async (): Promise<number> =>
+    Number(await track.getAttribute('data-volume'))
+
+  const start = await volume()
+  await page.keyboard.press('-')
+  await expect.poll(volume).toBeCloseTo(start - 0.05, 2)
+  await page.keyboard.press('+')
+  await page.keyboard.press('+')
+  await expect.poll(volume).toBeCloseTo(start + 0.05, 2)
+
+  // Dragging the track sets the level from where the pointer lands.
+  const box = (await track.boundingBox())!
+  await page.mouse.move(box.x + box.width * 0.25, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width * 0.75, box.y + box.height / 2)
+  await page.mouse.up()
+  await expect.poll(volume).toBeCloseTo(0.75, 1)
+
+  // The volume keys must not have leaked into a search box on the way: they
+  // adjust the level and are never typed.
+  await expect(page.getByTestId('screen-title')).toHaveText('NOW PLAYING')
+})
+
+test('the header note returns to the track without restarting it', async () => {
+  const rows = page.getByTestId('screen-row')
+  // Only readable while NOW PLAYING is on screen, which is the only place the
+  // position is needed below.
+  const positionMs = async (): Promise<number> =>
+    Number(await page.getByTestId('now-playing').getAttribute('data-position'))
+
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'ALL TRACKS' }).click()
+  await rows.filter({ hasText: 'drag_b' }).click()
+
+  // Playing leaves the list exactly where it was.
+  await expect(page.getByTestId('screen-title')).toHaveText('ALL TRACKS')
+
+  await openNowPlaying()
+  await expect(page.getByTestId('np-title')).toHaveText('drag_b.wav')
+
+  // Let it get somewhere into the track before leaving, so a restart would be
+  // unmistakable.
+  await expect.poll(positionMs, { timeout: 10000 }).toBeGreaterThan(400)
+  const before = await positionMs()
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('screen-title')).toHaveText('ALL TRACKS')
+
+  // The note in the header is the way back, and it picks up where it was.
+  await openNowPlaying()
+  await expect(page.getByTestId('np-title')).toHaveText('drag_b.wav')
+  expect(await positionMs()).toBeGreaterThanOrEqual(before)
+
+  // Selecting the row that is already playing is the one case that does move
+  // the screen: there is nothing to start, so it can only mean "take me to it".
+  // And it must arrive where the track already was, not back at the beginning.
+  const beforeRow = await positionMs()
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId('screen-title')).toHaveText('ALL TRACKS')
+  await rows.filter({ hasText: 'drag_b' }).click()
+  await expect(page.getByTestId('now-playing')).toBeVisible()
+  await expect(page.getByTestId('np-title')).toHaveText('drag_b.wav')
+  expect(await positionMs()).toBeGreaterThanOrEqual(beforeRow)
+})
+
+test('the trash icon hides a track, and UNDO brings it back', async () => {
+  const rows = page.getByTestId('screen-row')
+
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'ALL TRACKS' }).click()
+  // The trash sits beside the row button, not inside it, so it is reached
+  // through the wrapper that holds both.
+  const victim = page.getByTestId('screen-row-wrap').filter({ hasText: 'loop_128bpm' })
+  await expect(victim).toHaveCount(1)
+
+  // The icon only appears on hover, and must not activate the row it sits on.
+  await victim.hover()
+  await victim.getByTestId('row-trash').click()
+
+  await expect(rows.filter({ hasText: 'loop_128bpm' })).toHaveCount(0)
+  await expect(page.getByTestId('now-playing')).not.toBeVisible()
+
+  await page.getByTestId('undo-hide').click()
+  await expect(rows.filter({ hasText: 'loop_128bpm' })).toHaveCount(1)
+})
+
+test('a hidden track is restorable from SETTINGS long after the undo is gone', async () => {
+  const rows = page.getByTestId('screen-row')
+
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'ALL TRACKS' }).click()
+  const victim = page.getByTestId('screen-row-wrap').filter({ hasText: 'beat_v3' })
+  await victim.hover()
+  await victim.getByTestId('row-trash').click()
+  await expect(rows.filter({ hasText: 'beat_v3' })).toHaveCount(0)
+
+  // Outlast the undo offer: from here the settings screen is the only way back.
+  await expect(page.getByTestId('undo-hide')).toHaveCount(0, { timeout: 10000 })
+
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'SETTINGS' }).click()
+  await rows.filter({ hasText: 'HIDDEN TRACKS' }).click()
+  await expect(page.getByTestId('screen-title')).toHaveText('HIDDEN TRACKS')
+
+  await rows.filter({ hasText: 'beat_v3' }).click()
+  await expect(page.getByTestId('screen-title')).toHaveText('HIDDEN TRACKS')
+
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'ALL TRACKS' }).click()
+  await expect(rows.filter({ hasText: 'beat_v3' })).toHaveCount(1)
 })

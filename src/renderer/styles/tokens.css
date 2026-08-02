@@ -10,6 +10,9 @@
   --chassis-highlight: rgba(255, 255, 255, 0.9);
   --chassis-shadow: rgba(20, 24, 33, 0.16);
   --chassis-radius: 22px;
+  /* The outer edge of the window itself. Tighter than the body radius so the
+     two curves read as nested rather than concentric. */
+  --chassis-outer-radius: 14px;
 
   /* Screen: pale blue glass with black text */
   --lcd-bg: #e8f0fa;

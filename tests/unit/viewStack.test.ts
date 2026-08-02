@@ -133,6 +133,24 @@ describe('search while typing', () => {
     const state = run([{ type: 'backspace' }])
     expect(state).toEqual(INITIAL_SCREEN_STATE)
   })
+
+  it('a held backspace empties the query but stays in the search', () => {
+    const state = run([
+      { type: 'typeChar', char: 'b' },
+      { type: 'backspace', fromRepeat: true },
+      { type: 'backspace', fromRepeat: true }
+    ])
+    expect(currentView(state)).toMatchObject({ kind: 'search', query: '' })
+  })
+
+  it('a held backspace still deletes letters', () => {
+    const state = run([
+      { type: 'typeChar', char: 'b' },
+      { type: 'typeChar', char: 'e' },
+      { type: 'backspace', fromRepeat: true }
+    ])
+    expect(currentView(state)).toMatchObject({ kind: 'search', query: 'b' })
+  })
 })
 
 describe('text prompt view', () => {
@@ -166,6 +184,16 @@ describe('text prompt view', () => {
   it('backspace on an empty prompt closes it', () => {
     const state = run([{ type: 'push', view: promptView }, { type: 'backspace' }])
     expect(currentView(state)).toMatchObject({ kind: 'menu', menu: 'root' })
+  })
+
+  it('a held backspace does not close an empty prompt', () => {
+    const state = run([
+      { type: 'push', view: promptView },
+      { type: 'typeChar', char: 'X' },
+      { type: 'backspace', fromRepeat: true },
+      { type: 'backspace', fromRepeat: true }
+    ])
+    expect(currentView(state)).toMatchObject({ kind: 'prompt', value: '' })
   })
 
   it('confirming closes the prompt', () => {

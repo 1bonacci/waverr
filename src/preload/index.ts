@@ -28,6 +28,8 @@ const api: WaverrApi = {
     stats: () => ipcRenderer.invoke(IPC.libraryStats),
     toggleFavorite: (trackId: number) =>
       ipcRenderer.invoke(IPC.libraryToggleFavorite, trackId) as Promise<boolean>,
+    setTrackHidden: (trackId: number, hidden: boolean) =>
+      ipcRenderer.invoke(IPC.librarySetTrackHidden, trackId, hidden),
     listPlaylists: () => ipcRenderer.invoke(IPC.libraryListPlaylists),
     createPlaylist: (name: string) => ipcRenderer.invoke(IPC.libraryCreatePlaylist, name),
     renamePlaylist: (playlistId: number, name: string) =>

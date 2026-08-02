@@ -35,14 +35,51 @@ export function ListView({ controller }: ListViewProps): JSX.Element {
           {item.sectionHeader && (
             <div className={styles.sectionHeader}>{item.sectionHeader}</div>
           )}
-          <Row
-            item={item}
-            index={index}
-            selected={index === selected}
-            moving={index === movingTo}
-            controller={controller}
-            rowRef={index === selected ? selectedRef : undefined}
-          />
+          <div className={styles.rowWrap} data-testid="screen-row-wrap">
+            <Row
+              item={item}
+              index={index}
+              selected={index === selected}
+              moving={index === movingTo}
+              controller={controller}
+              rowRef={index === selected ? selectedRef : undefined}
+            />
+            {item.canHide && item.trackId !== undefined && (
+              <button
+                type="button"
+                className={styles.trash}
+                title={`Hide ${item.label}`}
+                aria-label={`Hide ${item.label}`}
+                data-testid="row-trash"
+                // Pointer events, not just click: the row listens on
+                // pointerdown/up for its long press, and those fire first.
+                // Without stopping them here, hiding a track would also select
+                // and play it.
+                onPointerDown={(event) => event.stopPropagation()}
+                onPointerUp={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  controller.hideTrack(item.trackId!, item.label)
+                }}
+              >
+                {/* Drawn rather than typed: the LCD font is monospace and has
+                    no glyph for the trash emoji, which rendered as a blank
+                    box. `currentColor` keeps it in step with the row. */}
+                <svg
+                  viewBox="0 0 14 14"
+                  width="11"
+                  height="11"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.3"
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                >
+                  <path d="M2.5 3.5h9M5.5 3.5V2.2h3v1.3M3.6 3.5l.6 8.3h5.6l.6-8.3M6 6v3.6M8 6v3.6" />
+                </svg>
+              </button>
+            )}
+          </div>
         </Fragment>
       ))}
     </div>

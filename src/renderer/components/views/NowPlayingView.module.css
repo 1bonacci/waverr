@@ -60,6 +60,36 @@
   background: var(--lcd-accent);
 }
 
+.volume {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.volumeLabel {
+  flex: 0 0 auto;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--lcd-ink-dim);
+}
+
+.volumeTrack {
+  flex: 1;
+  height: 6px;
+  border: 1px solid var(--lcd-ink-dim);
+  border-radius: 2px;
+  overflow: hidden;
+  cursor: pointer;
+  /* The track is dragged, so the browser must not claim the gesture for a
+     pan or a text selection partway through. */
+  touch-action: none;
+}
+
+.volumeFill {
+  height: 100%;
+  background: var(--lcd-accent);
+}
+
 .transport {
   display: flex;
   justify-content: space-between;

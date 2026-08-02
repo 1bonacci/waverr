@@ -18,6 +18,7 @@ export const IPC = {
   libraryGetTrack: 'library:getTrack',
   libraryStats: 'library:stats',
   libraryToggleFavorite: 'library:toggleFavorite',
+  librarySetTrackHidden: 'library:setTrackHidden',
 
   libraryListPlaylists: 'library:listPlaylists',
   libraryCreatePlaylist: 'library:createPlaylist',
@@ -78,6 +79,8 @@ export interface Track {
   lastPlayedAt: number | null
   playCount: number
   missing: boolean
+  /** Kept out of every list on purpose. The file is untouched on disk. */
+  hidden: boolean
   favorite: boolean
 }
 
@@ -99,6 +102,7 @@ export interface PlaylistEntry extends Track {
 export interface LibraryStats {
   trackCount: number
   missingCount: number
+  hiddenCount: number
   rootCount: number
   totalDurationMs: number
 }
@@ -129,6 +133,9 @@ export interface TrackQuery {
   folderPath?: string
   onlyFavorites?: boolean
   includeMissing?: boolean
+  /** Returns *only* hidden tracks instead of excluding them. For the screen
+   *  that restores them; every other list leaves this off. */
+  onlyHidden?: boolean
   /**
    * `folder` groups tracks by their containing folder and sorts A-Z inside
    * each group. It is what the flat ALL TRACKS list uses: one scrollable list,
@@ -158,6 +165,8 @@ export interface WaverrApi {
     stats(): Promise<LibraryStats>
     /** Returns the resulting state: true if it ended up marked as a favorite. */
     toggleFavorite(trackId: number): Promise<boolean>
+    /** Hides a track from every list, or restores it. Never touches the file. */
+    setTrackHidden(trackId: number, hidden: boolean): Promise<void>
     listPlaylists(): Promise<Playlist[]>
     createPlaylist(name: string): Promise<Playlist | null>
     renamePlaylist(playlistId: number, name: string): Promise<boolean>

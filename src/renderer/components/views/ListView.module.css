@@ -11,6 +11,15 @@
   display: none;
 }
 
+/* Holds the row and its trash icon side by side. The icon is a real flex
+   sibling rather than an overlay: laid over the row it landed on top of the
+   folder name and was unreadable. */
+.rowWrap {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+}
+
 .row {
   display: flex;
   align-items: center;
@@ -20,19 +29,74 @@
   line-height: 1.35;
   color: var(--lcd-ink);
   text-align: left;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Rows that cannot be hidden still leave the gutter, so the folder column
+   lines up down the whole list whether or not a row has the icon. */
+.rowWrap:not(:has(.trash)) .row {
+  padding-right: 28px;
+}
+
+/* Invisible until the row is hovered: on a list of hundreds of files a column
+   of trash icons is noise, and an always-visible delete invites a misclick.
+   It keeps its width the whole time (visibility, not display) so the labels
+   beside it do not shift as the pointer moves down the list. */
+.trash {
   flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1;
+  visibility: hidden;
+  color: var(--lcd-ink-dim);
+  cursor: pointer;
+}
+
+.rowWrap:hover .trash {
+  visibility: visible;
+}
+
+/* Wins over the selected-row colour below: pointing at the trash should look
+   like the destructive thing it is, on the blue bar as much as off it. */
+.rowWrap .trash:hover,
+.rowWrap:has(.rowSelected) .trash:hover {
+  color: var(--lcd-error);
+}
+
+/* Keyboard users get it too: it is reachable by Tab and shows on focus. */
+.trash:focus-visible {
+  visibility: visible;
+  outline: 1px solid var(--lcd-accent);
 }
 
 /* The selected row is the blue bar. Black text on blue reads badly, so
-   everything inside it flips to --lcd-accent-ink. */
+   everything inside it flips to --lcd-accent-ink. The background is painted on
+   the wrapper as well, so the bar runs the full width instead of stopping
+   short of the trash icon beside it. */
 .rowSelected {
   background: var(--lcd-accent);
   color: var(--lcd-accent-ink);
 }
 
+.rowWrap:has(.rowSelected) {
+  background: var(--lcd-accent);
+}
+
+.rowWrap:has(.rowSelected) .trash {
+  color: var(--lcd-accent-ink);
+}
+
 /* Mouse preview of what OK would select. Never applies to the selected row,
-   which already owns the strong accent. */
-.row:hover:not(.rowSelected) {
+   which already owns the strong accent.
+
+   Painted once, on the wrapper only: --lcd-accent-soft is translucent, so
+   tinting the row as well stacked two layers and left the strip under the
+   trash icon visibly lighter than the rest of the row. */
+.rowWrap:hover:not(:has(.rowSelected)) {
   background: var(--lcd-accent-soft);
 }
 

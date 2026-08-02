@@ -32,6 +32,10 @@ export interface ScreenItem {
   /** Present only on rows that are tracks: enables marking them as favorites. */
   trackId?: number
   favorite?: boolean
+  /** Draws the trash icon on the row. Only on lists where removing a track from
+   *  the library is what the user means -- not in the queue or a playlist,
+   *  where REMOVE already means "take it out of this list". */
+  canHide?: boolean
   /** Present only on rows where the context menu makes sense. */
   contextTarget?: ContextTarget
   /** Section header (NOW/NEXT UP/LATER) to draw above this row. Not a row
@@ -62,6 +66,11 @@ export interface ScreenController {
   toggleFavorite: () => void
   /** Opens the context menu on row `index`, if it has any actions defined. */
   openContextMenu: (index: number) => void
+  /** Hides a track from the library. The file on disk is left alone. */
+  hideTrack: (trackId: number, label: string) => void
+  /** The track hidden a moment ago, while it can still be put back. */
+  undo: { trackId: number; label: string } | null
+  undoHide: () => void
   /** Applies the current view's `PromptIntent`. A no-op outside `prompt`. */
   confirmPrompt: () => void
   /** Error message for the current prompt (duplicate name), or null if none. */
@@ -86,12 +95,17 @@ const ROOT_MENU: Array<{ id: string; label: string; view: View }> = [
  */
 const LIST_LIMIT = 5000
 
+/** How long the offer to undo a hidden track stays on screen. */
+const UNDO_WINDOW_MS = 5000
+
 export function useScreen(): ScreenController {
   const [state, dispatch] = useReducer(screenReducer, INITIAL_SCREEN_STATE)
   const [items, setItems] = useState<ScreenItem[]>([])
   const [loading, setLoading] = useState(false)
   const [scan, setScan] = useState<ScanProgress | null>(null)
   const [revision, setRevision] = useState(0)
+  // The track hidden a moment ago, while the offer to undo is still standing.
+  const [undo, setUndo] = useState<{ trackId: number; label: string } | null>(null)
   const [promptError, setPromptError] = useState<string | null>(null)
   // The QUEUE view reads the engine directly rather than the database: without
   // this, queueing or moving to the next track would not refresh what is shown.
@@ -130,6 +144,19 @@ export function useScreen(): ScreenController {
   // screen) as a normal activation, instead of collapsing to a one-track list.
   const contextRowActivateRef = useRef<(() => void | Promise<void>) | null>(null)
 
+  // Read by `undoHide`, which must not be rebuilt every time the offer changes.
+  const undoRef = useRef(undo)
+  undoRef.current = undo
+
+  // The offer stands for a few seconds. Hiding another track replaces it, so
+  // only the most recent one can be taken back -- past that, HIDDEN TRACKS is
+  // where they are restored from.
+  useEffect(() => {
+    if (!undo) return
+    const timer = setTimeout(() => setUndo(null), UNDO_WINDOW_MS)
+    return () => clearTimeout(timer)
+  }, [undo])
+
   useEffect(() => {
     const token = ++loadTokenRef.current
     let cancelled = false
@@ -140,7 +167,9 @@ export function useScreen(): ScreenController {
       setItems([])
       setLoading(true)
       setPromptError(null)
-      const next = await buildItems(view, dispatch, pendingTrackId, contextRowActivateRef.current)
+      const next = await buildItems(view, dispatch, pendingTrackId, contextRowActivateRef.current, () =>
+        setRevision((value) => value + 1)
+      )
       if (!cancelled && token === loadTokenRef.current) {
         setItems(next)
         setLoading(false)
@@ -244,6 +273,30 @@ export function useScreen(): ScreenController {
     })
   }, [items, selected])
 
+  /**
+   * Hides a track and offers to put it back.
+   *
+   * Pruning a folder of samples means doing this many times in a row, so it
+   * takes effect immediately rather than asking first -- the undo is what makes
+   * that safe. Anything hidden is still listed under SETTINGS > HIDDEN TRACKS
+   * once the offer expires.
+   */
+  const hideTrack = useCallback((trackId: number, label: string) => {
+    void window.waverr.library.setTrackHidden(trackId, true).then(() => {
+      setUndo({ trackId, label })
+      setRevision((value) => value + 1)
+    })
+  }, [])
+
+  const undoHide = useCallback(() => {
+    const pending = undoRef.current
+    if (!pending) return
+    setUndo(null)
+    void window.waverr.library.setTrackHidden(pending.trackId, false).then(() => {
+      setRevision((value) => value + 1)
+    })
+  }, [])
+
   const openContextMenu = useCallback(
     (index: number) => {
       const target = items[index]?.contextTarget
@@ -317,6 +370,9 @@ export function useScreen(): ScreenController {
     moveBy,
     toggleFavorite,
     openContextMenu,
+    hideTrack,
+    undo,
+    undoHide,
     confirmPrompt: () => void confirmPrompt(),
     promptError
   }
@@ -367,21 +423,25 @@ const MENU_TITLES: Record<MenuId, string> = {
   favorites: 'FAVORITES',
   playlists: 'PLAYLISTS',
   playlistPicker: 'ADD TO PLAYLIST',
-  settings: 'SETTINGS'
+  settings: 'SETTINGS',
+  hiddenTracks: 'HIDDEN TRACKS'
 }
 
 async function buildItems(
   view: View,
   dispatch: (action: ScreenAction) => void,
   pendingTrackId: number | null,
-  contextRowActivate: (() => void | Promise<void>) | null
+  contextRowActivate: (() => void | Promise<void>) | null,
+  /** Rebuilds the current list. For rows that change the data underneath them
+   *  and stay where they are, which navigation alone would not pick up. */
+  refresh: () => void
 ): Promise<ScreenItem[]> {
   switch (view.kind) {
     case 'nowPlaying':
       return []
 
     case 'menu':
-      return buildMenuItems(view.menu, dispatch, pendingTrackId)
+      return buildMenuItems(view.menu, dispatch, pendingTrackId, refresh)
 
     case 'search': {
       const tracks = await window.waverr.library.search({
@@ -413,13 +473,17 @@ async function buildItems(
           playlistId: view.playlistId,
           itemId: entry.itemId
         },
+        // Stays on the playlist, same as any other track row -- unless this is
+        // the one already playing, which can only mean "take me to it".
         activate: () => {
+          if (audioEngine.getState().track?.id === entry.id) {
+            dispatch({ type: 'openNowPlaying' })
+            return
+          }
           // Missing files are skipped: if the chosen one cannot play, start at
-          // the first playable track after it. If none is left, start nothing
-          // (and do not jump the screen to NOW PLAYING).
+          // the first playable track after it. If none is left, start nothing.
           const startIndex = startIndexForEntry(entries, entry.itemId)
           if (startIndex === null) return
-          dispatch({ type: 'openNowPlaying' })
           void audioEngine.playNow(
             entries.filter((candidate) => !candidate.missing),
             startIndex
@@ -472,12 +536,10 @@ async function buildItems(
               // one if it needs to be found again later.
               occurrence: occurrenceInManual(rows, manualIndex)
             },
-            activate: () => {
-              // Jumping straight to a queued track: the ones ahead of it in the
-              // manual queue are not lost, they stay there to play afterwards.
-              dispatch({ type: 'openNowPlaying' })
-              void audioEngine.skipToManual(manualIndex)
-            }
+            // Jumping straight to a queued track: the ones ahead of it in the
+            // manual queue are not lost, they stay there to play afterwards.
+            // Stays on the queue, so the rest of it is still in view.
+            activate: () => void audioEngine.skipToManual(manualIndex)
           })
           continue
         }
@@ -491,10 +553,7 @@ async function buildItems(
           sectionHeader: upcomingIndex === 0 ? 'LATER' : undefined,
           trackId: row.track.id,
           favorite: row.track.favorite,
-          activate: () => {
-            dispatch({ type: 'openNowPlaying' })
-            void audioEngine.playNow(upcomingTracks, upcomingIndex)
-          }
+          activate: () => void audioEngine.playNow(upcomingTracks, upcomingIndex)
         })
       }
 
@@ -522,7 +581,8 @@ async function buildItems(
 async function buildMenuItems(
   menu: string,
   dispatch: (action: ScreenAction) => void,
-  pendingTrackId: number | null
+  pendingTrackId: number | null,
+  refresh: () => void
 ): Promise<ScreenItem[]> {
   switch (menu) {
     case 'root':
@@ -563,6 +623,33 @@ async function buildMenuItems(
       })
       if (tracks.length === 0) return [emptyItem('NO FAVORITES')]
       return tracks.map(trackItem(tracks, dispatch))
+    }
+
+    /**
+     * Everything hidden from the library, so a mistake is never permanent.
+     * These rows restore instead of playing: there is nothing to listen to
+     * here, the whole point of the screen is putting a file back.
+     */
+    case 'hiddenTracks': {
+      const tracks = await window.waverr.library.search({
+        onlyHidden: true,
+        sort: 'folder',
+        limit: LIST_LIMIT
+      })
+      if (tracks.length === 0) return [emptyItem('NOTHING HIDDEN')]
+
+      return tracks.map((track) => ({
+        key: String(track.id),
+        label: displayName(track),
+        meta: track.folder,
+        trackId: track.id,
+        activate: async () => {
+          await window.waverr.library.setTrackHidden(track.id, false)
+          // The row has to leave a list the user is still looking at, and
+          // nothing about the view itself changed, so ask for a rebuild.
+          refresh()
+        }
+      }))
     }
 
     case 'playlists': {
@@ -677,6 +764,21 @@ async function buildMenuItems(
           activate: () => {}
         }
       ]
+
+      // Only worth a row once something is actually hidden.
+      if (stats.hiddenCount > 0) {
+        actions.push({
+          key: 'hidden',
+          label: 'HIDDEN TRACKS',
+          meta: String(stats.hiddenCount),
+          drillsDown: true,
+          activate: () =>
+            dispatch({
+              type: 'push',
+              view: { kind: 'menu', menu: 'hiddenTracks', selected: 0 }
+            })
+        })
+      }
 
       const rootItems: ScreenItem[] = roots.map((root) => ({
         key: `root-${root.id}`,
@@ -873,18 +975,25 @@ function trackItem(
     meta: track.folder,
     trackId: track.id,
     favorite: track.favorite,
+    canHide: true,
     contextTarget: {
       label: displayName(track),
       index,
       origin: 'library',
       trackId: track.id
     },
+    // Starting a track leaves the list alone: picking one is not a reason to
+    // stop browsing, and jumping away meant going back every time to hear the
+    // next one. Picking the one already playing is the exception -- there is
+    // nothing to start, so it can only mean "take me to it".
+    //
+    // The visible list becomes the queue: that is how NEXT follows what is on
+    // screen.
     activate: () => {
-      // The screen changes first: loading the audio can take a moment, and
-      // navigation has no reason to sit around waiting for it.
-      dispatch({ type: 'openNowPlaying' })
-      // The visible list becomes the queue: that is how NEXT follows what is on
-      // screen.
+      if (audioEngine.getState().track?.id === track.id) {
+        dispatch({ type: 'openNowPlaying' })
+        return
+      }
       void audioEngine.playNow(tracks, index)
     }
   })

@@ -61,6 +61,9 @@ export function registerLibraryIpc(library: Library, getWindow: () => BrowserWin
   ipcMain.handle(IPC.libraryToggleFavorite, (_event, trackId: number) =>
     library.toggleFavorite(trackId)
   )
+  ipcMain.handle(IPC.librarySetTrackHidden, (_event, trackId: number, hidden: boolean) =>
+    library.setTrackHidden(trackId, hidden)
+  )
 
   ipcMain.handle(IPC.libraryListPlaylists, () => library.listPlaylists())
   ipcMain.handle(IPC.libraryCreatePlaylist, (_event, name: string) => library.createPlaylist(name))

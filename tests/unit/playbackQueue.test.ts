@@ -34,6 +34,7 @@ function makeTrack(id: number, filename = `track_${id}.wav`): Track {
     lastPlayedAt: null,
     playCount: 0,
     missing: false,
+    hidden: false,
     favorite: false
   }
 }
