@@ -25,45 +25,45 @@ async function setup(): Promise<Library> {
   return library
 }
 
-describe('crear y borrar playlists', () => {
-  it('crea una playlist vacia', async () => {
+describe('creating and deleting playlists', () => {
+  it('creates an empty playlist', async () => {
     const library = await setup()
-    const playlist = library.createPlaylist('EP verano')
+    const playlist = library.createPlaylist('Summer EP')
 
     expect(playlist).not.toBeNull()
-    expect(playlist!.name).toBe('EP verano')
+    expect(playlist!.name).toBe('Summer EP')
     expect(playlist!.trackCount).toBe(0)
     expect(library.listPlaylists()).toHaveLength(1)
   })
 
-  it('rechaza un nombre repetido sin importar mayusculas', async () => {
+  it('rejects a duplicate name regardless of case', async () => {
     const library = await setup()
-    library.createPlaylist('EP verano')
+    library.createPlaylist('Summer EP')
 
-    expect(library.createPlaylist('ep VERANO')).toBeNull()
+    expect(library.createPlaylist('summer EP')).toBeNull()
     expect(library.listPlaylists()).toHaveLength(1)
   })
 
-  it('renombra', async () => {
+  it('renames', async () => {
     const library = await setup()
-    const playlist = library.createPlaylist('borrador')!
+    const playlist = library.createPlaylist('draft')!
 
-    expect(library.renamePlaylist(playlist.id, 'EP final')).toBe(true)
-    expect(library.listPlaylists()[0]!.name).toBe('EP final')
+    expect(library.renamePlaylist(playlist.id, 'Final EP')).toBe(true)
+    expect(library.listPlaylists()[0]!.name).toBe('Final EP')
   })
 
-  it('renombrar a un nombre ocupado falla', async () => {
+  it('renaming to a name already in use fails', async () => {
     const library = await setup()
-    library.createPlaylist('uno')
-    const otra = library.createPlaylist('dos')!
+    library.createPlaylist('one')
+    const other = library.createPlaylist('two')!
 
-    expect(library.renamePlaylist(otra.id, 'uno')).toBe(false)
-    expect(library.listPlaylists().map((item) => item.name).sort()).toEqual(['dos', 'uno'])
+    expect(library.renamePlaylist(other.id, 'one')).toBe(false)
+    expect(library.listPlaylists().map((item) => item.name).sort()).toEqual(['one', 'two'])
   })
 
-  it('borrar la playlist borra sus items', async () => {
+  it('deleting a playlist deletes its items', async () => {
     const library = await setup()
-    const playlist = library.createPlaylist('temporal')!
+    const playlist = library.createPlaylist('temporary')!
     const tracks = library.search({ sort: 'name' })
     library.addToPlaylist(playlist.id, tracks[0]!.id)
 
@@ -74,8 +74,8 @@ describe('crear y borrar playlists', () => {
   })
 })
 
-describe('contenido de una playlist', () => {
-  it('agrega en orden y cuenta', async () => {
+describe('playlist contents', () => {
+  it('adds in order and counts', async () => {
     const library = await setup()
     const playlist = library.createPlaylist('EP')!
     const tracks = library.search({ sort: 'name' })
@@ -88,7 +88,7 @@ describe('contenido de una playlist', () => {
     expect(library.listPlaylists()[0]!.trackCount).toBe(3)
   })
 
-  it('permite la misma pista dos veces', async () => {
+  it('allows the same track twice', async () => {
     const library = await setup()
     const playlist = library.createPlaylist('EP')!
     const track = library.search({ sort: 'name' })[0]!
@@ -101,7 +101,7 @@ describe('contenido de una playlist', () => {
     expect(entries[0]!.itemId).not.toBe(entries[1]!.itemId)
   })
 
-  it('quitar deja las posiciones consecutivas', async () => {
+  it('removing leaves consecutive positions', async () => {
     const library = await setup()
     const playlist = library.createPlaylist('EP')!
     for (const track of library.search({ sort: 'name' })) {
@@ -116,7 +116,7 @@ describe('contenido de una playlist', () => {
     expect(rest.map((entry) => entry.position)).toEqual([0, 1])
   })
 
-  it('reordena y deja las posiciones consecutivas', async () => {
+  it('reordering leaves consecutive positions', async () => {
     const library = await setup()
     const playlist = library.createPlaylist('EP')!
     for (const track of library.search({ sort: 'name' })) {
@@ -130,7 +130,7 @@ describe('contenido de una playlist', () => {
     expect(entries.map((entry) => entry.position)).toEqual([0, 1, 2])
   })
 
-  it('mover fuera de rango satura en vez de romper', async () => {
+  it('moving out of range saturates instead of breaking', async () => {
     const library = await setup()
     const playlist = library.createPlaylist('EP')!
     for (const track of library.search({ sort: 'name' })) {
@@ -146,7 +146,7 @@ describe('contenido de una playlist', () => {
     ])
   })
 
-  it('una pista perdida sigue figurando en la playlist', async () => {
+  it('a missing track still shows up in the playlist', async () => {
     const library = await setup()
     const playlist = library.createPlaylist('EP')!
     const track = library.search({ sort: 'name' })[0]!
@@ -160,11 +160,11 @@ describe('contenido de una playlist', () => {
     expect(entries[0]!.missing).toBe(true)
   })
 
-  it('crea una playlist a partir de una lista de pistas', async () => {
+  it('creates a playlist from a list of tracks', async () => {
     const library = await setup()
     const tracks = library.search({ sort: 'name' })
 
-    const playlist = library.createPlaylistFromTracks('sesion', [
+    const playlist = library.createPlaylistFromTracks('session', [
       tracks[2]!.id,
       tracks[0]!.id
     ])!
@@ -175,22 +175,22 @@ describe('contenido de una playlist', () => {
     ])
   })
 
-  it('un trackId inexistente no deja una playlist a medias', async () => {
+  it('a nonexistent trackId does not leave a half-built playlist', async () => {
     const library = await setup()
     const tracks = library.search({ sort: 'name' })
-    const idInexistente = tracks.reduce((max, track) => Math.max(max, track.id), 0) + 1000
+    const missingId = tracks.reduce((max, track) => Math.max(max, track.id), 0) + 1000
 
     expect(() =>
-      library.createPlaylistFromTracks('rota', [tracks[0]!.id, idInexistente])
+      library.createPlaylistFromTracks('broken', [tracks[0]!.id, missingId])
     ).toThrow()
 
-    // Ni la playlist ni sus items sobreviven: todo o nada.
+    // Neither the playlist nor its items survive: all or nothing.
     expect(library.listPlaylists()).toEqual([])
   })
 })
 
 describe('settings', () => {
-  it('guarda y lee un valor', async () => {
+  it('saves and reads a value', async () => {
     const library = await setup()
     expect(library.getSetting('queue')).toBeNull()
 
