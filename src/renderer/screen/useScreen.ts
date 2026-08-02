@@ -20,25 +20,26 @@ import {
   type View
 } from './viewStack'
 
-/** Una fila de la pantalla. La vista solo dibuja esto; no sabe de donde salio. */
+/** A row of the screen. The view only draws this; it does not know where it
+ *  came from. */
 export interface ScreenItem {
   key: string
   label: string
-  /** Texto chico a la derecha: carpeta, duracion, cantidad. */
+  /** Small text on the right: folder, duration, count. */
   meta?: string
   /** true dibuja la flechita de "entra a otro nivel". */
   drillsDown?: boolean
-  /** Presente solo en filas que son pistas: habilita marcarlas como favoritas. */
+  /** Present only on rows that are tracks: enables marking them as favorites. */
   trackId?: number
   favorite?: boolean
-  /** Presente solo en filas donde tiene sentido el menu contextual. */
+  /** Present only on rows where the context menu makes sense. */
   contextTarget?: ContextTarget
-  /** Rotulo de seccion (AHORA/SIGUIENTE/LUEGO) para dibujar arriba de esta
-   *  fila. No es una fila en si: no ocupa un indice ni se puede seleccionar. */
+  /** Section header (NOW/NEXT UP/LATER) to draw above this row. Not a row
+   *  itself: it takes no index and cannot be selected. */
   sectionHeader?: string
-  /** Fila de accion (GUARDAR COMO PLAYLIST, + NUEVA PLAYLIST) en vez de una
-   *  pista: la aritmetica del modo mover la ignora, porque no es un lugar
-   *  valido donde soltar ni algo que se pueda reordenar. */
+  /** An action row (SAVE AS PLAYLIST, + NEW PLAYLIST) rather than a track: the
+   *  move-mode arithmetic ignores it, because it is neither a valid place to
+   *  drop nor something that can be reordered. */
   isAction?: boolean
   activate: () => void | Promise<void>
 }
@@ -51,20 +52,19 @@ export interface ScreenController {
   loading: boolean
   scan: ScanProgress | null
   dispatch: (action: ScreenAction) => void
-  /** Ejecuta la fila seleccionada. */
+  /** Runs the selected row. */
   activate: () => void
-  /** Suelta la fila agarrada en modo mover sobre la fila `index`. Es lo que
-   *  usa un click de mouse (a diferencia de OK, que suelta donde ya estaba
-   *  el arrastre). */
+  /** Drops the row held in move mode onto row `index`. This is what a mouse
+   *  click uses (unlike OK, which drops wherever the drag already was). */
   dropAt: (index: number) => void
   moveBy: (delta: number) => void
-  /** Marca/desmarca la pista seleccionada, o la que suena si no hay lista. */
+  /** Toggles the selected track, or the one playing when there is no list. */
   toggleFavorite: () => void
-  /** Abre el menu contextual sobre la fila `index`, si tiene acciones definidas. */
+  /** Opens the context menu on row `index`, if it has any actions defined. */
   openContextMenu: (index: number) => void
-  /** Aplica el `PromptIntent` de la vista actual. No hace nada fuera de `prompt`. */
+  /** Applies the current view's `PromptIntent`. A no-op outside `prompt`. */
   confirmPrompt: () => void
-  /** Mensaje de error del prompt actual (nombre repetido), o null si no hay. */
+  /** Error message for the current prompt (duplicate name), or null if none. */
   promptError: string | null
 }
 
@@ -93,15 +93,15 @@ export function useScreen(): ScreenController {
   const [scan, setScan] = useState<ScanProgress | null>(null)
   const [revision, setRevision] = useState(0)
   const [promptError, setPromptError] = useState<string | null>(null)
-  // La vista COLA lee el motor directo, no la base: sin esto, encolar o
-  // pasar a la siguiente pista no refrescaria lo que se ve.
+  // The QUEUE view reads the engine directly rather than the database: without
+  // this, queueing or moving to the next track would not refresh what is shown.
   const playback = usePlayback()
 
   const view = currentView(state)
   const selected = currentSelection(state)
 
-  // La pista que se esta agregando a una playlist, si la hay: viene de la
-  // vista `context` mas cercana en la pila (el picker se apila arriba de ella).
+  // The track being added to a playlist, if any: it comes from the nearest
+  // `context` view on the stack (the picker is pushed on top of it).
   const pendingTrackId = useMemo(() => {
     for (let index = state.stack.length - 1; index >= 0; index--) {
       const entry = state.stack[index]
@@ -113,22 +113,21 @@ export function useScreen(): ScreenController {
   useEffect(() => {
     return window.waverr.library.onScanProgress((progress) => {
       setScan(progress.phase === 'done' ? null : progress)
-      // Al terminar el escaneo la lista visible puede haber quedado vieja.
+      // Once the scan finishes, the visible list may have gone stale.
       if (progress.phase === 'done') setRevision((value) => value + 1)
     })
   }, [])
 
-  // Clave estable de la vista: solo se recarga cuando cambia lo que se mira,
-  // no cuando se mueve la seleccion.
+  // Stable key for the view: it only reloads when what is being looked at
+  // changes, not when the selection moves.
   const viewKey = useMemo(() => describeView(view), [view])
 
-  // Evita que una carga lenta pise el resultado de una carga posterior.
+  // Stops a slow load from overwriting the result of a later one.
   const loadTokenRef = useRef(0)
 
-  // La fila sobre la que se abrio el menu contextual actual, si la hay.
-  // "REPRODUCIR AHORA" la reusa tal cual para heredar el mismo contexto
-  // (la lista entera que se estaba mirando) que una activacion normal:
-  // asi no colapsa a una lista de un solo tema.
+  // The row the current context menu was opened on, if any. "PLAY NOW" reuses
+  // it as-is so it inherits the same context (the whole list that was on
+  // screen) as a normal activation, instead of collapsing to a one-track list.
   const contextRowActivateRef = useRef<(() => void | Promise<void>) | null>(null)
 
   useEffect(() => {
@@ -136,8 +135,8 @@ export function useScreen(): ScreenController {
     let cancelled = false
 
     async function load(): Promise<void> {
-      // La lista anterior se descarta de entrada: si se dejara dibujada
-      // mientras carga la nueva, apretar OK rapido activaria la fila vieja.
+      // The previous list is dropped up front: if it stayed drawn while the new
+      // one loads, a quick OK would activate the old row.
       setItems([])
       setLoading(true)
       setPromptError(null)
@@ -152,51 +151,50 @@ export function useScreen(): ScreenController {
     return () => {
       cancelled = true
     }
-    // `view` se reconstruye en cada movimiento de seleccion; `viewKey` no.
-    // `playback.track?.id` y `playback.manualCount` cubren la vista COLA: no
-    // tiene una clave propia (`viewKey` es fijo, 'queue'), asi que sin esto no
-    // se enteraria de que cambio AHORA o de que se encolo/saco algo a mano.
+    // `view` is rebuilt on every selection move; `viewKey` is not.
+    // `playback.track?.id` and `playback.manualCount` cover the QUEUE view: it
+    // has no key of its own (`viewKey` is the constant 'queue'), so without
+    // them it would never notice that NOW changed or that something was queued
+    // or removed by hand.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewKey, revision, pendingTrackId, playback.track?.id, playback.manualCount])
 
-  // Cuantas filas cuentan para la aritmetica del modo mover: todo salvo las
-  // filas de accion (GUARDAR COMO PLAYLIST). Sin este filtro el marcador
-  // podria pararse sobre esa fila, que no es una pista ni un lugar valido
-  // donde soltar.
+  // How many rows count for the move-mode arithmetic: everything except action
+  // rows (SAVE AS PLAYLIST). Without this filter the marker could come to rest
+  // on that row, which is neither a track nor a valid place to drop.
   const movableRowCount = useMemo(() => items.filter((item) => !item.isAction).length, [items])
 
-  // Suelta la fila agarrada en modo mover en la posicion `toIndex`, sin
-  // importar si vino de OK (posicion ya guardada en `moving.to`) o de un
-  // click (la fila que se toco). Comun a `activate` y `dropAt` para que el
-  // mouse y el teclado sueltan exactamente igual.
+  // Drops the row held in move mode at position `toIndex`, whether it came from
+  // OK (position already stored in `moving.to`) or a click (the row that was
+  // touched). Shared by `activate` and `dropAt` so mouse and keyboard drop
+  // exactly the same way.
   const performDrop = useCallback(
     (toIndex: number) => {
       const view_ = view
       if ((view_.kind !== 'queue' && view_.kind !== 'playlist') || !view_.moving) return
 
       const { from, originId, originOccurrence } = view_.moving
-      // `movableRowCount` sale de `items` (estado de React): el efecto de
-      // carga hace `setItems([])` antes de cada recarga, y una recarga se
-      // dispara justo si la pista actual termina a mitad del arrastre. En esa
-      // ventana `movableRowCount` cae a 0 aunque la cola real no este vacia;
-      // clampear contra eso mandaria el destino al principio en vez de donde
-      // el usuario ya habia dejado el marcador. Por eso el fallback es
-      // `toIndex` tal cual: si de verdad no hay nada que mover, la resolucion
-      // por identidad de mas abajo (o `movePlaylistItem`) no encuentra nada
-      // valido y no pasa nada.
+      // `movableRowCount` comes from `items` (React state): the load effect
+      // does `setItems([])` before every reload, and a reload is triggered
+      // exactly when the current track ends mid-drag. In that window
+      // `movableRowCount` drops to 0 even though the real queue is not empty;
+      // clamping against that would send the target back to the start instead
+      // of where the user had already left the marker. That is why the
+      // fallback is `toIndex` as-is: if there truly is nothing to move, the
+      // identity resolution below (or `movePlaylistItem`) finds nothing valid
+      // and nothing happens.
       const to = movableRowCount > 0 ? Math.max(0, Math.min(toIndex, movableRowCount - 1)) : Math.max(0, toIndex)
 
       if (view_.kind === 'queue') {
-        // La lista pudo reconstruirse mientras se arrastraba (una pista que
-        // termina consume la cola manual y corre los indices de fila): el
-        // origen se resuelve por la identidad de la pista agarrada
-        // (`originId` + `originOccurrence`, para desempatar si esta
-        // encolada mas de una vez), no por el indice de fila que se guardo
-        // al empezar.
+        // The list may have been rebuilt while dragging (a track ending
+        // consumes the manual queue and shifts every row index): the origin is
+        // resolved by the identity of the grabbed track (`originId` +
+        // `originOccurrence`, to break the tie if it is queued more than once),
+        // not by the row index that was stored when the drag started.
         const rows = buildQueueRows(audioEngine.getQueueView())
         const originIndex = resolveManualIndexById(rows, originId, originOccurrence)
-        // Si ya no esta (se consumio sola durante el arrastre) no hay nada
-        // que mover: soltar no hace nada distinto de cancelar.
+        // If it is no longer there (consumed on its own during the drag) there
+        // is nothing to move: dropping does nothing different from cancelling.
         if (originIndex !== null) {
           audioEngine.moveInQueue(originIndex, manualIndexForDrop(rows, to))
         }
@@ -212,7 +210,7 @@ export function useScreen(): ScreenController {
 
   const activate = useCallback(() => {
     const view_ = view
-    // Con una fila agarrada, OK la suelta donde ya estaba en vez de activarla.
+    // With a row held, OK drops it where it already was instead of activating it.
     if ((view_.kind === 'queue' || view_.kind === 'playlist') && view_.moving) {
       performDrop(view_.moving.to)
       return
@@ -227,8 +225,8 @@ export function useScreen(): ScreenController {
   const moveBy = useCallback(
     (delta: number) => {
       const view_ = view
-      // Con una fila agarrada, solo cuentan las filas de pista: el marcador
-      // no se puede parar sobre GUARDAR COMO PLAYLIST.
+      // With a row held, only track rows count: the marker cannot come to rest
+      // on SAVE AS PLAYLIST.
       const moving = (view_.kind === 'queue' || view_.kind === 'playlist') && view_.moving !== null
       dispatch({ type: 'move', delta, itemCount: moving ? movableRowCount : items.length })
     },
@@ -236,8 +234,8 @@ export function useScreen(): ScreenController {
   )
 
   const toggleFavorite = useCallback(() => {
-    // En una lista manda la fila seleccionada; en la vista de reproduccion,
-    // la pista que esta sonando.
+    // In a list the selected row wins; in the playback view, the track that is
+    // playing.
     const trackId = items[selected]?.trackId ?? audioEngine.getState().track?.id
     if (trackId === undefined) return
 
@@ -290,14 +288,15 @@ export function useScreen(): ScreenController {
 
     setPromptError(null)
     dispatch({ type: 'confirmPrompt' })
-    // Si el prompt vino del picker de "AGREGAR A PLAYLIST" (trae la pista a
-    // agregar), tiene que terminar en el mismo lugar que elegir una playlist
-    // ya existente: la lista de origen. La pila en ese caso es
-    // [..., lista, context, playlistPicker, prompt]; 'confirmPrompt' ya saco
-    // el prompt, faltan otros dos 'back' para sacar el picker y el menu
-    // contextual. El otro uso de newPlaylist (desde la vista PLAYLISTS, sin
-    // trackIdToAdd) no tiene ese picker ni ese context debajo: ahi hay que
-    // quedarse viendo la lista de playlists con la recien creada.
+    // If the prompt came from the "ADD TO PLAYLIST" picker (it carries the
+    // track to add), it has to land in the same place as choosing an existing
+    // playlist: the list it came from. The stack in that case is
+    // [..., list, context, playlistPicker, prompt]; 'confirmPrompt' already
+    // popped the prompt, so two more 'back's are needed to pop the picker and
+    // the context menu. The other use of newPlaylist (from the PLAYLISTS view,
+    // with no trackIdToAdd) has neither that picker nor that context underneath:
+    // there, the user should stay looking at the playlist list with the new one
+    // in it.
     if (intent.kind === 'newPlaylist' && intent.trackIdToAdd !== undefined) {
       dispatch({ type: 'back' })
       dispatch({ type: 'back' })
@@ -461,21 +460,21 @@ async function buildItems(
             favorite: row.track.favorite,
             contextTarget: {
               label: displayName(row.track),
-              // El indice es dentro de la cola manual: es lo que entienden
-              // moveInQueue y removeFromQueue. Sirve solo de referencia
-              // inicial (ver comentario en ContextTarget): MOVER y QUITAR
-              // resuelven por trackId + occurrence, no por este indice.
+              // The index is within the manual queue: what moveInQueue and
+              // removeFromQueue understand. Only an initial reference (see the
+              // comment on ContextTarget): MOVE and REMOVE resolve by trackId +
+              // occurrence, not by this index.
               index: manualIndex,
               origin: 'queue',
               trackId: row.track.id,
-              // Encolar la misma pista dos veces esta permitido a proposito:
-              // este ordinal es lo que permite distinguir esta copia de otra
-              // igual si hay que volver a encontrarla despues.
+              // Queueing the same track twice is allowed on purpose: this
+              // ordinal is what lets this copy be told apart from another equal
+              // one if it needs to be found again later.
               occurrence: occurrenceInManual(rows, manualIndex)
             },
             activate: () => {
-              // Saltar directo a un encolado: las que quedaron antes en la
-              // cola manual no se pierden, siguen ahi para sonar despues.
+              // Jumping straight to a queued track: the ones ahead of it in the
+              // manual queue are not lost, they stay there to play afterwards.
               dispatch({ type: 'openNowPlaying' })
               void audioEngine.skipToManual(manualIndex)
             }
@@ -698,8 +697,8 @@ async function buildMenuItems(
 }
 
 /**
- * Acciones sobre una fila. MOVER y QUITAR solo aparecen donde tienen sentido:
- * en la cola y adentro de una playlist.
+ * Actions on a row. MOVE and REMOVE only appear where they make sense: in the
+ * queue and inside a playlist.
  */
 async function buildContextItems(
   target: ContextTarget,
@@ -716,9 +715,9 @@ async function buildContextItems(
       label: 'PLAY NOW',
       activate: async () => {
         dispatch({ type: 'back' })
-        // Reusa la activacion normal de la fila (la misma que corre un
-        // click o un OK directo): hereda asi la lista de origen entera como
-        // contexto, en vez de colapsarla a una sola pista.
+        // Reuses the row's normal activation (the same one a click or a direct
+        // OK runs): that way it inherits the whole originating list as the
+        // context, instead of collapsing it to a single track.
         if (contextRowActivate) await contextRowActivate()
       }
     })
@@ -764,8 +763,8 @@ async function buildContextItems(
     })
   }
 
-  // Fila de una playlist en si misma (no una pista adentro): reproducir,
-  // renombrar y borrar.
+  // A row that is a playlist itself (not a track inside one): play, rename and
+  // delete.
   if (target.playlistId !== undefined && target.trackId === undefined) {
     const playlistId = target.playlistId
 
@@ -776,7 +775,7 @@ async function buildContextItems(
         const entries = await window.waverr.library.listPlaylistTracks(playlistId)
         const playable = entries.filter((entry) => !entry.missing)
         dispatch({ type: 'back' })
-        // Playlist vacia o toda perdida: no hay donde arrancar.
+        // Empty playlist, or every track missing: nowhere to start.
         if (playable.length === 0) return
         dispatch({ type: 'openNowPlaying' })
         void audioEngine.playNow(playable, 0)
@@ -814,20 +813,20 @@ async function buildContextItems(
       key: 'move',
       label: 'MOVE',
       activate: () => {
-        // No hace falta un `setSelection` aca: `openContextMenu` ya dejo la
-        // seleccion de la vista de abajo en la fila que se toco (long-press o
-        // click derecho), y `back` no la toca. Reponerla con `target.index`
-        // seria ademas incorrecto para la cola cuando hay fila AHORA: ese
-        // indice es de dominio (posicion en la cola manual), no de fila, y
-        // ambos difieren en uno justo en ese caso.
+        // No `setSelection` is needed here: `openContextMenu` already left the
+        // selection of the view underneath on the row that was touched
+        // (long-press or right click), and `back` does not touch it. Restoring
+        // it with `target.index` would also be wrong for the queue when a NOW
+        // row is present: that index is a domain index (position in the manual
+        // queue), not a row index, and the two differ by one in exactly that
+        // case.
         //
-        // La identidad que se guarda para soltar despues (`originId`) es el
-        // itemId dentro de una playlist o el trackId dentro de la cola: lo
-        // que sigue identificando a esta fila si la lista se reconstruye
-        // mientras se esta arrastrando (por ejemplo, una pista que termina y
-        // corre los indices de la cola manual). `originOccurrence` (0 en
-        // playlist, donde itemId ya es unico) desempata si esa pista esta
-        // encolada mas de una vez.
+        // The identity stored for dropping later (`originId`) is the itemId
+        // inside a playlist or the trackId inside the queue: whatever keeps
+        // identifying this row if the list is rebuilt mid-drag (for example, a
+        // track ending and shifting the manual queue's row indices).
+        // `originOccurrence` (0 in a playlist, where itemId is already unique)
+        // breaks the tie when that track is queued more than once.
         const originId = target.origin === 'playlist' ? target.itemId : target.trackId
         if (originId === undefined) return
         dispatch({ type: 'back' })
@@ -840,11 +839,11 @@ async function buildContextItems(
       label: 'REMOVE',
       activate: async () => {
         if (target.origin === 'queue') {
-          // No se usa `target.index`: si la pista actual termino con el menu
-          // ACCIONES abierto, ese indice quedo viejo y sacaria la fila
-          // equivocada (justo lo que la invariante de la cola prohibe: nada
-          // que el usuario encolo desaparece salvo que el lo saque). Se
-          // resuelve de nuevo por identidad, igual que MOVER.
+          // `target.index` is not used: if the current track ended while the
+          // ACTIONS menu was open, that index went stale and would remove the
+          // wrong row (exactly what the queue's invariant forbids: nothing the
+          // user queued disappears unless they remove it). It is resolved by
+          // identity again, same as MOVE.
           if (target.trackId !== undefined) {
             const rows = buildQueueRows(audioEngine.getQueueView())
             const manualIndex = resolveManualIndexById(rows, target.trackId, target.occurrence ?? 0)
@@ -881,10 +880,11 @@ function trackItem(
       trackId: track.id
     },
     activate: () => {
-      // La pantalla cambia primero: cargar el audio puede tardar y la
-      // navegacion no tiene por que quedarse esperandolo.
+      // The screen changes first: loading the audio can take a moment, and
+      // navigation has no reason to sit around waiting for it.
       dispatch({ type: 'openNowPlaying' })
-      // La lista visible se convierte en la cola: asi NEXT sigue lo que se ve.
+      // The visible list becomes the queue: that is how NEXT follows what is on
+      // screen.
       void audioEngine.playNow(tracks, index)
     }
   })
@@ -894,7 +894,8 @@ function emptyItem(label: string): ScreenItem {
   return { key: 'empty', label, activate: () => {} }
 }
 
-/** Un export sin tags se muestra por su nombre de archivo, que es lo que el autor reconoce. */
+/** An export with no tags is shown by its filename, which is what its author
+ *  recognizes. */
 export function displayName(track: Track): string {
   return track.hasTags && track.title ? track.title : track.filename
 }
