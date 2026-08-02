@@ -7,27 +7,27 @@ import {
 } from '../../src/shared/media'
 
 describe('mimeTypeFor', () => {
-  it('mapea las extensiones soportadas', () => {
+  it('maps the supported extensions', () => {
     expect(mimeTypeFor('C:/beats/beat.mp3')).toBe('audio/mpeg')
     expect(mimeTypeFor('C:/beats/beat.WAV')).toBe('audio/wav')
     expect(mimeTypeFor('C:/beats/beat.flac')).toBe('audio/flac')
     expect(mimeTypeFor('C:/beats/beat.m4a')).toBe('audio/mp4')
   })
 
-  it('cae a octet-stream con extensiones desconocidas', () => {
-    expect(mimeTypeFor('C:/beats/proyecto.als')).toBe('application/octet-stream')
-    expect(mimeTypeFor('sin-extension')).toBe('application/octet-stream')
+  it('falls back to octet-stream for unknown extensions', () => {
+    expect(mimeTypeFor('C:/beats/project.als')).toBe('application/octet-stream')
+    expect(mimeTypeFor('no-extension')).toBe('application/octet-stream')
   })
 })
 
 describe('parseTrackUrl', () => {
-  it('acepta la forma valida', () => {
+  it('accepts the valid form', () => {
     expect(parseTrackUrl(mediaUrlForTrack(42))).toBe(42)
   })
 
-  it('rechaza cualquier cosa que no sea un id de pista', () => {
-    // El renderer solo puede nombrar pistas ya indexadas: no hay forma de
-    // pedir una ruta arbitraria a traves de esta URL.
+  it('rejects anything that is not a track id', () => {
+    // The renderer can only name already-indexed tracks: there is no way to
+    // request an arbitrary path through this URL.
     expect(parseTrackUrl('waverr://track/../../../etc/passwd')).toBeNull()
     expect(parseTrackUrl('waverr://track/C:/Windows/System32/config/SAM')).toBeNull()
     expect(parseTrackUrl('waverr://file/42')).toBeNull()
@@ -35,41 +35,41 @@ describe('parseTrackUrl', () => {
     expect(parseTrackUrl('waverr://track/0')).toBeNull()
     expect(parseTrackUrl('waverr://track/-1')).toBeNull()
     expect(parseTrackUrl('waverr://track/abc')).toBeNull()
-    expect(parseTrackUrl('no es una url')).toBeNull()
+    expect(parseTrackUrl('not a url')).toBeNull()
   })
 })
 
 describe('parseRangeHeader', () => {
   const SIZE = 1000
 
-  it('sin header devuelve null (se sirve el archivo entero)', () => {
+  it('with no header returns null (the whole file is served)', () => {
     expect(parseRangeHeader(null, SIZE)).toBeNull()
     expect(parseRangeHeader('', SIZE)).toBeNull()
   })
 
-  it('interpreta un rango cerrado', () => {
+  it('parses a closed range', () => {
     expect(parseRangeHeader('bytes=0-499', SIZE)).toEqual({ start: 0, end: 499 })
   })
 
-  it('interpreta un rango abierto al final', () => {
+  it('parses a range open at the end', () => {
     expect(parseRangeHeader('bytes=500-', SIZE)).toEqual({ start: 500, end: 999 })
   })
 
-  it('interpreta un sufijo', () => {
+  it('parses a suffix', () => {
     expect(parseRangeHeader('bytes=-200', SIZE)).toEqual({ start: 800, end: 999 })
   })
 
-  it('recorta el final al tamanio real del archivo', () => {
+  it('clamps the end to the file\'s real size', () => {
     expect(parseRangeHeader('bytes=900-99999', SIZE)).toEqual({ start: 900, end: 999 })
   })
 
-  it('ignora formatos que no entiende', () => {
+  it('ignores formats it does not understand', () => {
     expect(parseRangeHeader('items=0-10', SIZE)).toBeNull()
     expect(parseRangeHeader('bytes=0-10, 20-30', SIZE)).toBeNull()
     expect(parseRangeHeader('bytes=-', SIZE)).toBeNull()
   })
 
-  it('lanza cuando el rango es imposible (merece 416)', () => {
+  it('throws when the range is impossible (deserves a 416)', () => {
     expect(() => parseRangeHeader('bytes=1000-1100', SIZE)).toThrow(RangeError)
     expect(() => parseRangeHeader('bytes=600-500', SIZE)).toThrow(RangeError)
     expect(() => parseRangeHeader('bytes=-0', SIZE)).toThrow(RangeError)

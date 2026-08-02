@@ -5,9 +5,9 @@ import { _electron as electron, test } from '@playwright/test'
 
 const MEDIA_DIR = process.env['WAVERR_MEDIA_DIR'] ?? ''
 
-test.skip(!MEDIA_DIR, 'define WAVERR_MEDIA_DIR con audio real')
+test.skip(!MEDIA_DIR, 'set WAVERR_MEDIA_DIR to real audio')
 
-test('reproduce cada formato de la carpeta indicada', async () => {
+test('plays every format in the given folder', async () => {
   const userDataDir = await mkdtemp(join(tmpdir(), 'waverr-fmt-'))
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
@@ -20,7 +20,7 @@ test('reproduce cada formato de la carpeta indicada', async () => {
   await page.waitForSelector('[data-testid="screen-title"]')
   await page.evaluate((root: string) => window.waverr.library.addRoot(root), MEDIA_DIR)
   await page.waitForSelector('[data-testid="screen-row"]', { timeout: 30000 })
-  // Gesto de usuario real: sin el, Chromium no deja arrancar el AudioContext.
+  // A real user gesture: without it, Chromium will not let the AudioContext start.
   await page.getByTestId('screen-row').first().click()
 
   const report = await page.evaluate(async () => {
@@ -68,7 +68,7 @@ test('reproduce cada formato de la carpeta indicada', async () => {
     return results
   })
 
-  console.log('FORMATOS:', JSON.stringify(report, null, 2))
+  console.log('FORMATS:', JSON.stringify(report, null, 2))
 
   await app.close()
   await rm(userDataDir, { recursive: true, force: true }).catch(() => {})
