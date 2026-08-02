@@ -1,34 +1,50 @@
 /**
- * Design tokens del chasis. Todo el "hardware" se dibuja con estas variables,
- * asi que cambiar la paleta aca cambia el aparato entero.
+ * Design tokens for the device. The whole "hardware" look is drawn from these,
+ * so changing the palette here changes the entire player.
  */
 :root {
-  /* Chasis */
-  --chassis-bg: #16161a;
-  --chassis-face: linear-gradient(170deg, #2c2d33 0%, #1b1c21 55%, #141419 100%);
-  --chassis-edge: #0a0a0d;
-  --chassis-highlight: rgba(255, 255, 255, 0.08);
+  /* Body: white plastic */
+  --chassis-bg: #d8dade;
+  --chassis-face: linear-gradient(170deg, #ffffff 0%, #f2f3f5 55%, #e4e6ea 100%);
+  --chassis-edge: #c6c9cf;
+  --chassis-highlight: rgba(255, 255, 255, 0.9);
+  --chassis-shadow: rgba(20, 24, 33, 0.16);
   --chassis-radius: 22px;
+  /* The outer edge of the window itself. Tighter than the body radius so the
+     two curves read as nested rather than concentric. */
+  --chassis-outer-radius: 14px;
 
-  /* Pantalla LCD */
-  --lcd-bg: #0d1a12;
-  --lcd-bg-glow: radial-gradient(120% 90% at 50% 0%, #14311f 0%, #0a150f 100%);
-  --lcd-ink: #7dfcb4;
-  --lcd-ink-dim: rgba(125, 252, 180, 0.45);
-  --lcd-bezel: #08080a;
+  /* Screen: pale blue glass with black text */
+  --lcd-bg: #e8f0fa;
+  --lcd-bg-glow: radial-gradient(120% 90% at 50% 0%, #f4f8fd 0%, #dde8f6 100%);
+  --lcd-ink: #10151c;
+  --lcd-ink-dim: rgba(16, 21, 28, 0.5);
+  --lcd-ink-faint: rgba(16, 21, 28, 0.18);
+  --lcd-bezel: #b9bdc4;
   --lcd-radius: 6px;
 
-  /* Botones */
-  --btn-face: linear-gradient(180deg, #3a3b42 0%, #26272d 100%);
-  --btn-face-active: linear-gradient(180deg, #202127 0%, #2e2f36 100%);
-  --btn-ink: #d6d7dd;
-  --btn-shadow: 0 2px 0 #0c0c0f, 0 4px 10px rgba(0, 0, 0, 0.5);
+  /* Accent: the selection bar, and the visualizer. Black on blue reads badly,
+     so anything sitting on the accent uses --lcd-accent-ink. */
+  --lcd-accent: #1f6feb;
+  --lcd-accent-ink: #ffffff;
+  --lcd-accent-soft: rgba(31, 111, 235, 0.14);
 
-  /* Tipografia */
+  /* Rejected input, such as a duplicate playlist name. */
+  --lcd-error: #c0392b;
+  --lcd-error-ink: #ffffff;
+
+  /* Buttons and wheel */
+  --btn-face: linear-gradient(180deg, #fdfdfe 0%, #e9ebef 100%);
+  --btn-face-active: linear-gradient(180deg, #dfe2e7 0%, #eef0f3 100%);
+  --btn-ink: #3d434d;
+  --btn-ink-dim: rgba(61, 67, 77, 0.62);
+  --btn-shadow: 0 2px 0 #c3c7ce, 0 4px 10px rgba(20, 24, 33, 0.18);
+
+  /* Typography */
   --font-lcd: 'Consolas', 'DejaVu Sans Mono', 'Courier New', monospace;
   --font-ui: 'Segoe UI', system-ui, sans-serif;
 
-  /* Espaciado */
+  /* Spacing */
   --gap-xs: 4px;
   --gap-sm: 8px;
   --gap-md: 14px;

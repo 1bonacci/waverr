@@ -18,10 +18,10 @@ function makeTrack(id: number, filename = `track_${id}.wav`): Track {
   return {
     id,
     rootId: 1,
-    path: `C:/musica/${filename}`,
+    path: `C:/music/${filename}`,
     filename,
-    dir: 'C:/musica',
-    folder: 'musica',
+    dir: 'C:/music',
+    folder: 'music',
     ext: '.wav',
     size: 1000,
     mtime: 0,
@@ -34,6 +34,7 @@ function makeTrack(id: number, filename = `track_${id}.wav`): Track {
     lastPlayedAt: null,
     playCount: 0,
     missing: false,
+    hidden: false,
     favorite: false
   }
 }
@@ -41,73 +42,73 @@ function makeTrack(id: number, filename = `track_${id}.wav`): Track {
 const [a, b, c, d] = [makeTrack(1), makeTrack(2), makeTrack(3), makeTrack(4)]
 
 describe('playNow', () => {
-  it('empieza a sonar la pista elegida del contexto', () => {
+  it('starts playing the chosen track from the context', () => {
     const state = playNow(EMPTY_QUEUE, [a, b, c], 1)
     expect(state.current).toBe(b)
     expect(queueView(state).upcoming).toEqual([c])
   })
 
-  it('no borra la cola manual', () => {
+  it('does not clear the manual queue', () => {
     const withManual = enqueue(EMPTY_QUEUE, d)
     const state = playNow(withManual, [a, b, c], 0)
     expect(state.manual).toEqual([d])
   })
 
-  it('un indice fuera de rango no rompe', () => {
+  it('an out-of-range index does not break', () => {
     const state = playNow(EMPTY_QUEUE, [a, b], 99)
     expect(state.current).toBe(b)
   })
 
-  it('un contexto vacio deja todo quieto', () => {
+  it('an empty context leaves everything untouched', () => {
     const state = playNow(EMPTY_QUEUE, [], 0)
     expect(state.current).toBeNull()
     expect(queueView(state).upcoming).toEqual([])
   })
 })
 
-describe('encolar', () => {
-  it('enqueue agrega al final', () => {
+describe('queueing', () => {
+  it('enqueue adds to the end', () => {
     const state = enqueue(enqueue(EMPTY_QUEUE, a), b)
     expect(state.manual).toEqual([a, b])
   })
 
-  it('enqueueNext agrega al principio', () => {
+  it('enqueueNext adds to the front', () => {
     const state = enqueueNext(enqueue(EMPTY_QUEUE, a), b)
     expect(state.manual).toEqual([b, a])
   })
 
-  it('permite la misma pista dos veces', () => {
+  it('allows the same track twice', () => {
     const state = enqueue(enqueue(EMPTY_QUEUE, a), a)
     expect(state.manual).toHaveLength(2)
   })
 })
 
 describe('advance', () => {
-  it('consume primero la cola manual', () => {
+  it('consumes the manual queue first', () => {
     const state = enqueue(playNow(EMPTY_QUEUE, [a, b, c], 0), d)
     const next = advance(state, 'off')!
     expect(next.current).toBe(d)
     expect(next.manual).toEqual([])
   })
 
-  it('agotada la cola manual sigue por el contexto donde iba', () => {
+  it('once the manual queue is empty, continues the context where it was', () => {
     let state = enqueue(playNow(EMPTY_QUEUE, [a, b, c], 0), d)
     state = advance(state, 'off')!
     state = advance(state, 'off')!
     expect(state.current).toBe(b)
   })
 
-  it('al final del contexto devuelve null', () => {
+  it('returns null at the end of the context', () => {
     const state = playNow(EMPTY_QUEUE, [a, b], 1)
     expect(advance(state, 'off')).toBeNull()
   })
 
-  it('con repeat all vuelve al principio del contexto', () => {
+  it('with repeat all, goes back to the start of the context', () => {
     const state = playNow(EMPTY_QUEUE, [a, b], 1)
     expect(advance(state, 'all')!.current).toBe(a)
   })
 
-  it('con repeat one no consume nada', () => {
+  it('with repeat one, consumes nothing', () => {
     const state = enqueue(playNow(EMPTY_QUEUE, [a, b], 0), d)
     const next = advance(state, 'one')!
     expect(next.current).toBe(a)
@@ -116,19 +117,19 @@ describe('advance', () => {
 })
 
 describe('previous', () => {
-  it('retrocede dentro del contexto', () => {
+  it('steps back within the context', () => {
     const state = playNow(EMPTY_QUEUE, [a, b, c], 2)
     expect(previous(state)!.current).toBe(b)
   })
 
-  it('en el primer tema devuelve null', () => {
+  it('returns null on the first track', () => {
     const state = playNow(EMPTY_QUEUE, [a, b], 0)
     expect(previous(state)).toBeNull()
   })
 })
 
 describe('shuffle', () => {
-  it('mezcla el contexto pero deja quieta la cola manual', () => {
+  it('shuffles the context but leaves the manual queue untouched', () => {
     const context = Array.from({ length: 30 }, (_, index) => makeTrack(index + 10))
     let state = playNow(EMPTY_QUEUE, context, 0)
     state = enqueue(enqueue(state, a), b)
@@ -136,18 +137,18 @@ describe('shuffle', () => {
     const shuffled = setShuffle(state, true)
 
     expect(shuffled.manual).toEqual([a, b])
-    // Sigue estando el contexto entero, solo cambio el orden.
+    // The whole context is still there, only the order changed.
     expect(new Set(shuffled.order)).toEqual(new Set(context.map((_, index) => index)))
     expect(queueView(shuffled).upcoming).not.toEqual(queueView(state).upcoming)
   })
 
-  it('no cambia lo que esta sonando', () => {
+  it('does not change what is playing', () => {
     const context = Array.from({ length: 20 }, (_, index) => makeTrack(index + 10))
     const state = playNow(EMPTY_QUEUE, context, 5)
     expect(setShuffle(state, true).current).toBe(state.current)
   })
 
-  it('apagarlo devuelve el orden original', () => {
+  it('turning it off restores the original order', () => {
     const context = [a, b, c, d]
     const state = setShuffle(setShuffle(playNow(EMPTY_QUEUE, context, 0), true), false)
     expect(state.order).toEqual([0, 1, 2, 3])
@@ -155,23 +156,23 @@ describe('shuffle', () => {
   })
 })
 
-describe('editar la cola manual', () => {
-  it('removeAt saca el elemento indicado', () => {
+describe('editing the manual queue', () => {
+  it('removeAt takes out the given element', () => {
     const state = enqueue(enqueue(enqueue(EMPTY_QUEUE, a), b), c)
     expect(removeAt(state, 1).manual).toEqual([a, c])
   })
 
-  it('removeAt fuera de rango no hace nada', () => {
+  it('removeAt out of range does nothing', () => {
     const state = enqueue(EMPTY_QUEUE, a)
     expect(removeAt(state, 7).manual).toEqual([a])
   })
 
-  it('move reordena', () => {
+  it('move reorders', () => {
     const state = enqueue(enqueue(enqueue(EMPTY_QUEUE, a), b), c)
     expect(move(state, 2, 0).manual).toEqual([c, a, b])
   })
 
-  it('move satura en los extremos en vez de envolver', () => {
+  it('move saturates at the ends instead of wrapping around', () => {
     const state = enqueue(enqueue(EMPTY_QUEUE, a), b)
     expect(move(state, 0, -5).manual).toEqual([a, b])
     expect(move(state, 0, 99).manual).toEqual([b, a])
@@ -179,23 +180,23 @@ describe('editar la cola manual', () => {
 })
 
 describe('skipToManual', () => {
-  it('la pista elegida pasa a sonar y las anteriores quedan para despues', () => {
+  it('the chosen track starts playing and the earlier ones wait for later', () => {
     const state = enqueue(enqueue(enqueue(EMPTY_QUEUE, a), b), c)
     const next = skipToManual(state, 2)
     expect(next.current).toBe(c)
-    // a y b (las que estaban antes de c) siguen en la cola manual, en el
-    // mismo orden: no se pierden por haber saltado por encima de ellas.
+    // a and b (the ones ahead of c) stay in the manual queue, in the same
+    // order: they are not lost by being skipped over.
     expect(next.manual).toEqual([a, b])
   })
 
-  it('saltar a la primera pista de la cola manual la deja sin nada por delante', () => {
+  it('skipping to the first track of the manual queue leaves nothing ahead of it', () => {
     const state = enqueue(enqueue(EMPTY_QUEUE, a), b)
     const next = skipToManual(state, 0)
     expect(next.current).toBe(a)
     expect(next.manual).toEqual([b])
   })
 
-  it('descarta lo que sonaba antes del salto, como cualquier avance', () => {
+  it('discards whatever was playing before the jump, like any advance', () => {
     let state = playNow(EMPTY_QUEUE, [d], 0)
     state = enqueue(enqueue(state, a), b)
     const next = skipToManual(state, 1)
@@ -203,7 +204,7 @@ describe('skipToManual', () => {
     expect(next.manual).toEqual([a])
   })
 
-  it('un indice fuera de rango no hace nada', () => {
+  it('an out-of-range index does nothing', () => {
     const state = enqueue(EMPTY_QUEUE, a)
     expect(skipToManual(state, 7)).toEqual(state)
     expect(skipToManual(state, -1)).toEqual(state)
@@ -211,7 +212,7 @@ describe('skipToManual', () => {
 })
 
 describe('queueView', () => {
-  it('separa lo que suena, lo encolado y lo que sigue del contexto', () => {
+  it('separates what is playing, what is queued, and what follows in the context', () => {
     let state = playNow(EMPTY_QUEUE, [a, b, c], 0)
     state = enqueue(state, d)
 

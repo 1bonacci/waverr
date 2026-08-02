@@ -6,8 +6,9 @@ import { AUDIO_EXTENSIONS, type ScanProgress, type ScanResult } from '../../shar
 const AUDIO_EXTENSION_SET = new Set<string>(AUDIO_EXTENSIONS)
 
 /**
- * Carpetas que nunca contienen musica del usuario y si pueden contener decenas
- * de miles de archivos. Saltearlas es la diferencia entre segundos y minutos.
+ * Folders that never hold the user's music but can easily hold tens of
+ * thousands of files. Skipping them is the difference between seconds and
+ * minutes.
  */
 const SKIPPED_DIRECTORIES = new Set([
   '$recycle.bin',
@@ -17,10 +18,10 @@ const SKIPPED_DIRECTORIES = new Set([
   '.svn'
 ])
 
-/** Profundidad maxima. Corta bucles de symlinks y arboles patologicos. */
+/** Maximum depth. Cuts off symlink loops and pathological trees. */
 const MAX_DEPTH = 24
 
-/** Cuantas filas se escriben por transaccion durante el escaneo. */
+/** How many rows are written per transaction during a scan. */
 const BATCH_SIZE = 500
 
 export interface FoundFile {
@@ -38,10 +39,10 @@ export function isAudioFile(filename: string): boolean {
 }
 
 /**
- * Recorre un arbol de carpetas y emite los archivos de audio que encuentra.
+ * Walks a folder tree and yields the audio files it finds.
  *
- * Los errores de permisos no abortan el escaneo: una carpeta ilegible se
- * saltea y el resto de la biblioteca se indexa igual.
+ * Permission errors do not abort the scan: an unreadable folder is skipped and
+ * the rest of the library is indexed anyway.
  */
 export async function* walkAudioFiles(rootPath: string): AsyncGenerator<FoundFile> {
   const pending: Array<{ path: string; depth: number }> = [{ path: rootPath, depth: 0 }]
@@ -55,7 +56,7 @@ export async function* walkAudioFiles(rootPath: string): AsyncGenerator<FoundFil
     try {
       dir = await opendir(current.path)
     } catch {
-      continue // carpeta ilegible o borrada mientras escaneabamos
+      continue // folder unreadable, or deleted while we were scanning
     }
 
     try {
@@ -84,7 +85,7 @@ export async function* walkAudioFiles(rootPath: string): AsyncGenerator<FoundFil
             mtime: Math.floor(info.mtimeMs)
           }
         } catch {
-          continue // el archivo desaparecio entre el readdir y el stat
+          continue // the file vanished between the readdir and the stat
         }
       }
     } catch {
@@ -101,11 +102,11 @@ interface KnownTrack {
 }
 
 /**
- * Escanea una raiz completa y sincroniza el indice.
+ * Scans a whole root and syncs the index.
  *
- * Primera pasada del pipeline: solo rutas, tamanio y fecha. Rapida a proposito,
- * porque apenas termina esto la busqueda ya funciona. Los tags los lee despues
- * `readPendingMetadata`.
+ * First pass of the pipeline: paths, size and date only. Deliberately fast,
+ * because search already works the moment it finishes. Tags are read afterwards
+ * by `readPendingMetadata`.
  */
 export async function scanRoot(
   db: SqliteDatabase,
@@ -180,7 +181,7 @@ export async function scanRoot(
         })
       )
     } else if (existing.missing === 1) {
-      // Estaba marcado como perdido y volvio a aparecer (disco externo).
+      // It was marked as missing and turned up again (external drive).
       batch.push(() => clearMissing.run(existing.id))
     }
 
@@ -193,8 +194,9 @@ export async function scanRoot(
 
   if (batch.length > 0) flush(batch)
 
-  // Lo que ya no esta en disco se marca perdido, no se borra: asi conserva
-  // favoritos, notas y posicion en playlists por si el disco vuelve a montarse.
+  // Whatever is no longer on disk is marked missing rather than deleted, so it
+  // keeps its favorites, notes and playlist positions in case the drive comes
+  // back.
   let missing = 0
   const nowMissing: number[] = []
   for (const [path, entry] of known) {
@@ -213,7 +215,8 @@ export async function scanRoot(
   return { found, added, updated, missing, durationMs: Date.now() - startedAt }
 }
 
-/** Normaliza una ruta de carpeta para comparar sin sorpresas de separador final. */
+/** Normalizes a folder path so comparisons are not surprised by a trailing
+ *  separator. */
 export function normalizeFolderPath(path: string): string {
   return path.endsWith(sep) && path.length > 1 ? path.slice(0, -1) : path
 }

@@ -1,9 +1,9 @@
 /**
- * Tipos compartidos entre el proceso main, el preload y el renderer.
- * Este archivo es la unica fuente de verdad del contrato de IPC.
+ * Types shared between the main process, the preload and the renderer.
+ * This file is the single source of truth for the IPC contract.
  */
 
-/** Canales de IPC. Centralizados para que main y preload no se desincronicen. */
+/** IPC channels. Centralized so main and preload cannot drift apart. */
 export const IPC = {
   windowMinimize: 'window:minimize',
   windowClose: 'window:close',
@@ -14,11 +14,11 @@ export const IPC = {
   libraryRemoveRoot: 'library:removeRoot',
   libraryRescan: 'library:rescan',
   librarySearch: 'library:search',
-  libraryListFolders: 'library:listFolders',
   libraryListTracks: 'library:listTracks',
   libraryGetTrack: 'library:getTrack',
   libraryStats: 'library:stats',
   libraryToggleFavorite: 'library:toggleFavorite',
+  librarySetTrackHidden: 'library:setTrackHidden',
 
   libraryListPlaylists: 'library:listPlaylists',
   libraryCreatePlaylist: 'library:createPlaylist',
@@ -32,11 +32,11 @@ export const IPC = {
   libraryGetSetting: 'library:getSetting',
   librarySetSetting: 'library:setSetting',
 
-  /** main -> renderer, progreso de escaneo */
+  /** main -> renderer, scan progress */
   libraryScanProgress: 'library:scanProgress'
 } as const
 
-/** Extensiones que waverr considera audio. */
+/** Extensions waverr treats as audio. */
 export const AUDIO_EXTENSIONS = [
   '.mp3',
   '.wav',
@@ -61,11 +61,11 @@ export interface Track {
   id: number
   rootId: number
   path: string
-  /** Nombre del archivo con extension. */
+  /** Filename including the extension. */
   filename: string
-  /** Ruta completa de la carpeta contenedora. */
+  /** Full path of the containing folder. */
   dir: string
-  /** Nombre de esa carpeta: hace de "album" cuando no hay tags. */
+  /** Name of that folder: stands in for the album when there are no tags. */
   folder: string
   ext: string
   size: number
@@ -79,15 +79,9 @@ export interface Track {
   lastPlayedAt: number | null
   playCount: number
   missing: boolean
+  /** Kept out of every list on purpose. The file is untouched on disk. */
+  hidden: boolean
   favorite: boolean
-}
-
-export interface FolderEntry {
-  /** Ruta absoluta de la carpeta. */
-  path: string
-  /** Nombre para mostrar en la pantalla. */
-  name: string
-  trackCount: number
 }
 
 export interface Playlist {
@@ -98,8 +92,8 @@ export interface Playlist {
   updatedAt: number
 }
 
-/** Una pista dentro de una playlist. `itemId` la identifica como fila de la
- *  playlist, porque la misma pista puede estar dos veces. */
+/** A track inside a playlist. `itemId` identifies it as a row of that
+ *  playlist, because the same track can appear twice. */
 export interface PlaylistEntry extends Track {
   itemId: number
   position: number
@@ -108,6 +102,7 @@ export interface PlaylistEntry extends Track {
 export interface LibraryStats {
   trackCount: number
   missingCount: number
+  hiddenCount: number
   rootCount: number
   totalDurationMs: number
 }
@@ -116,9 +111,9 @@ export type ScanPhase = 'walk' | 'metadata' | 'done'
 
 export interface ScanProgress {
   phase: ScanPhase
-  /** Archivos procesados en la fase actual. */
+  /** Files processed in the current phase. */
   done: number
-  /** Total conocido de la fase actual. 0 mientras se camina el arbol. */
+  /** Known total for the current phase. 0 while the tree is being walked. */
   total: number
   rootPath: string
 }
@@ -132,18 +127,26 @@ export interface ScanResult {
 }
 
 export interface TrackQuery {
-  /** Texto libre. Vacio devuelve todo ordenado por `sort`. */
+  /** Free text. Empty returns everything, ordered by `sort`. */
   query?: string
-  /** Limitar a una carpeta exacta. */
+  /** Restrict to one exact folder. */
   folderPath?: string
   onlyFavorites?: boolean
   includeMissing?: boolean
-  sort?: 'relevance' | 'recent' | 'name'
+  /** Returns *only* hidden tracks instead of excluding them. For the screen
+   *  that restores them; every other list leaves this off. */
+  onlyHidden?: boolean
+  /**
+   * `folder` groups tracks by their containing folder and sorts A-Z inside
+   * each group. It is what the flat ALL TRACKS list uses: one scrollable list,
+   * but files from the same session stay together.
+   */
+  sort?: 'relevance' | 'recent' | 'name' | 'folder'
   limit?: number
   offset?: number
 }
 
-/** API que el preload expone en `window.waverr`. */
+/** The API the preload exposes on `window.waverr`. */
 export interface WaverrApi {
   window: {
     minimize(): void
@@ -151,18 +154,19 @@ export interface WaverrApi {
   }
   library: {
     listRoots(): Promise<Root[]>
-    /** Abre el dialogo del sistema. Devuelve la raiz agregada o null si se cancelo. */
+    /** Opens the system dialog. Returns the added root, or null if cancelled. */
     pickRoot(): Promise<Root | null>
     addRoot(path: string): Promise<Root | null>
     removeRoot(rootId: number): Promise<void>
     rescan(): Promise<ScanResult[]>
     search(query: TrackQuery): Promise<Track[]>
-    listFolders(): Promise<FolderEntry[]>
     listTracks(query: TrackQuery): Promise<Track[]>
     getTrack(trackId: number): Promise<Track | null>
     stats(): Promise<LibraryStats>
-    /** Devuelve el estado resultante: true si quedo marcada como favorita. */
+    /** Returns the resulting state: true if it ended up marked as a favorite. */
     toggleFavorite(trackId: number): Promise<boolean>
+    /** Hides a track from every list, or restores it. Never touches the file. */
+    setTrackHidden(trackId: number, hidden: boolean): Promise<void>
     listPlaylists(): Promise<Playlist[]>
     createPlaylist(name: string): Promise<Playlist | null>
     renamePlaylist(playlistId: number, name: string): Promise<boolean>

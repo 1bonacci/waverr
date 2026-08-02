@@ -1,11 +1,11 @@
 /**
- * Traduccion de lo que el usuario tipea a una consulta ejecutable.
+ * Translates what the user types into an executable query.
  *
- * Modulo puro a proposito: no toca SQLite ni Electron, asi que se puede probar
- * entero con tests rapidos.
+ * Deliberately a pure module: it touches neither SQLite nor Electron, so it can
+ * be covered by fast tests.
  */
 
-/** El tokenizer trigram de FTS5 no puede indexar terminos de menos de 3 caracteres. */
+/** The FTS5 trigram tokenizer cannot index terms shorter than 3 characters. */
 export const TRIGRAM_MIN_LENGTH = 3
 
 export type SearchPlan =
@@ -14,15 +14,15 @@ export type SearchPlan =
   | { kind: 'like'; patterns: string[] }
 
 /**
- * Envuelve un termino como frase literal de FTS5. Sin esto, caracteres como
- * `-`, `(` o `*` que abundan en nombres de archivo de un DAW se interpretan
- * como sintaxis de consulta y tiran error.
+ * Wraps a term as a literal FTS5 phrase. Without this, characters like `-`, `(`
+ * or `*` -- which are everywhere in filenames coming out of a DAW -- are read
+ * as query syntax and throw.
  */
 export function escapeFtsPhrase(term: string): string {
   return `"${term.replace(/"/g, '""')}"`
 }
 
-/** Escapa los comodines de LIKE. Se usa junto con `ESCAPE '\'`. */
+/** Escapes LIKE wildcards. Used together with `ESCAPE '\'`. */
 export function escapeLike(term: string): string {
   return term.replace(/[\\%_]/g, (char) => `\\${char}`)
 }
@@ -32,12 +32,12 @@ export function tokenize(rawQuery: string): string[] {
 }
 
 /**
- * Decide como buscar:
- * - sin texto           -> listar todo
- * - todos los terminos >= 3 caracteres -> FTS5 trigram (rapido, subcadenas)
- * - algun termino corto -> LIKE %x% (mas lento pero correcto; trigram no puede)
+ * Decides how to search:
+ * - no text                   -> list everything
+ * - every term >= 3 chars     -> FTS5 trigram (fast, matches substrings)
+ * - any short term            -> LIKE %x% (slower but correct; trigram cannot)
  *
- * Los terminos se combinan con AND: tipear "beat 140" pide las dos cosas.
+ * Terms are combined with AND: typing "beat 140" asks for both.
  */
 export function planSearch(rawQuery: string): SearchPlan {
   const terms = tokenize(rawQuery)

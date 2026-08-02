@@ -8,8 +8,8 @@ import {
 } from '../shared/types'
 
 /**
- * Unico puente entre el renderer y el sistema. El renderer nunca ve `fs`,
- * `path` ni `ipcRenderer` crudo: solo estos metodos.
+ * The only bridge between the renderer and the system. The renderer never sees
+ * `fs`, `path` or raw `ipcRenderer`: only these methods.
  */
 const api: WaverrApi = {
   window: {
@@ -23,12 +23,13 @@ const api: WaverrApi = {
     removeRoot: (rootId: number) => ipcRenderer.invoke(IPC.libraryRemoveRoot, rootId),
     rescan: () => ipcRenderer.invoke(IPC.libraryRescan),
     search: (query: TrackQuery) => ipcRenderer.invoke(IPC.librarySearch, query),
-    listFolders: () => ipcRenderer.invoke(IPC.libraryListFolders),
     listTracks: (query: TrackQuery) => ipcRenderer.invoke(IPC.libraryListTracks, query),
     getTrack: (trackId: number) => ipcRenderer.invoke(IPC.libraryGetTrack, trackId),
     stats: () => ipcRenderer.invoke(IPC.libraryStats),
     toggleFavorite: (trackId: number) =>
       ipcRenderer.invoke(IPC.libraryToggleFavorite, trackId) as Promise<boolean>,
+    setTrackHidden: (trackId: number, hidden: boolean) =>
+      ipcRenderer.invoke(IPC.librarySetTrackHidden, trackId, hidden),
     listPlaylists: () => ipcRenderer.invoke(IPC.libraryListPlaylists),
     createPlaylist: (name: string) => ipcRenderer.invoke(IPC.libraryCreatePlaylist, name),
     renamePlaylist: (playlistId: number, name: string) =>

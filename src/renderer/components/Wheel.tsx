@@ -7,13 +7,13 @@ interface WheelProps {
   controller: ScreenController
 }
 
-/** Cuanto scroll acumulado equivale a mover una fila. */
+/** How much accumulated scroll equals moving one row. */
 const SCROLL_STEP = 40
 
 /**
- * Rueda de control. Las cuatro zonas del anillo son los botones fisicos y el
- * anillo entero responde al scroll del mouse, que es el reemplazo natural de
- * girar el dedo sobre la rueda original.
+ * The click wheel. The four zones of the ring are the physical buttons, and the
+ * whole ring responds to mouse scroll, which is the natural stand-in for
+ * turning a finger around the original wheel.
  */
 export function Wheel({ controller }: WheelProps): JSX.Element {
   const scrollAccumulator = useRef(0)
@@ -34,7 +34,7 @@ export function Wheel({ controller }: WheelProps): JSX.Element {
           type="button"
           className={`${styles.zone} ${styles.zoneTop}`}
           onClick={() => controller.dispatch({ type: 'back' })}
-          title="Atras (Esc)"
+          title="Back (Esc)"
         >
           MENU
         </button>
@@ -43,7 +43,7 @@ export function Wheel({ controller }: WheelProps): JSX.Element {
           type="button"
           className={`${styles.zone} ${styles.zoneLeft}`}
           onClick={() => void audioEngine.previous()}
-          title="Anterior (flecha izquierda)"
+          title="Previous (left arrow)"
         >
           <span className={styles.symbol}>|&#9664;&#9664;</span>
         </button>
@@ -52,7 +52,7 @@ export function Wheel({ controller }: WheelProps): JSX.Element {
           type="button"
           className={`${styles.zone} ${styles.zoneRight}`}
           onClick={() => void audioEngine.next()}
-          title="Siguiente (flecha derecha)"
+          title="Next (right arrow)"
         >
           <span className={styles.symbol}>&#9654;&#9654;|</span>
         </button>
@@ -61,7 +61,7 @@ export function Wheel({ controller }: WheelProps): JSX.Element {
           type="button"
           className={`${styles.zone} ${styles.zoneBottom}`}
           onClick={() => void audioEngine.toggle()}
-          title="Reproducir / pausar (espacio)"
+          title="Play / pause (space)"
         >
           <span className={styles.symbol}>&#9654; ||</span>
         </button>
@@ -70,7 +70,7 @@ export function Wheel({ controller }: WheelProps): JSX.Element {
           type="button"
           className={styles.center}
           onClick={() => controller.activate()}
-          title="Seleccionar (Enter)"
+          title="Select (Enter)"
         >
           OK
         </button>

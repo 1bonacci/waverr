@@ -11,14 +11,14 @@ function run(actions: ScreenAction[], from: ScreenState = INITIAL_SCREEN_STATE):
   return actions.reduce(screenReducer, from)
 }
 
-describe('estado inicial', () => {
-  it('arranca en el menu raiz', () => {
+describe('initial state', () => {
+  it('starts on the root menu', () => {
     expect(currentView(INITIAL_SCREEN_STATE)).toEqual({ kind: 'menu', menu: 'root', selected: 0 })
   })
 })
 
-describe('mover la seleccion', () => {
-  it('baja y sube', () => {
+describe('moving the selection', () => {
+  it('goes down and up', () => {
     const state = run([{ type: 'move', delta: 1, itemCount: 5 }])
     expect(currentView(state)).toMatchObject({ selected: 1 })
 
@@ -26,7 +26,7 @@ describe('mover la seleccion', () => {
     expect(currentView(back)).toMatchObject({ selected: 0 })
   })
 
-  it('se envuelve en los extremos', () => {
+  it('wraps around at the ends', () => {
     const up = run([{ type: 'move', delta: -1, itemCount: 4 }])
     expect(currentView(up)).toMatchObject({ selected: 3 })
 
@@ -37,66 +37,66 @@ describe('mover la seleccion', () => {
     expect(currentView(down)).toMatchObject({ selected: 0 })
   })
 
-  it('con lista vacia no se mueve', () => {
+  it('does not move with an empty list', () => {
     const state = run([{ type: 'move', delta: 1, itemCount: 0 }])
     expect(currentView(state)).toMatchObject({ selected: 0 })
   })
 
-  it('no aplica a la vista de reproduccion', () => {
+  it('does not apply to the playback view', () => {
     const state = run([{ type: 'openNowPlaying' }, { type: 'move', delta: 1, itemCount: 5 }])
     expect(currentView(state)).toEqual({ kind: 'nowPlaying' })
   })
 })
 
-describe('navegacion', () => {
-  it('apila y desapila vistas', () => {
+describe('navigation', () => {
+  it('pushes and pops views', () => {
     const state = run([
-      { type: 'push', view: { kind: 'folder', path: 'C:/beats', name: 'beats', selected: 0 } }
+      { type: 'push', view: { kind: 'menu', menu: 'tracks', selected: 0 } }
     ])
-    expect(currentView(state).kind).toBe('folder')
+    expect(currentView(state)).toMatchObject({ kind: 'menu', menu: 'tracks' })
 
     const back = screenReducer(state, { type: 'back' })
     expect(currentView(back)).toMatchObject({ kind: 'menu', menu: 'root' })
   })
 
-  it('conserva la seleccion del nivel anterior al volver', () => {
+  it('keeps the previous level\'s selection when going back', () => {
     const state = run([
       { type: 'move', delta: 2, itemCount: 6 },
-      { type: 'push', view: { kind: 'folder', path: 'C:/beats', name: 'beats', selected: 0 } },
+      { type: 'push', view: { kind: 'menu', menu: 'tracks', selected: 0 } },
       { type: 'move', delta: 3, itemCount: 10 },
       { type: 'back' }
     ])
     expect(currentView(state)).toMatchObject({ kind: 'menu', selected: 2 })
   })
 
-  it('volver desde el piso no vacia la pila', () => {
+  it('going back from the floor does not empty the stack', () => {
     const state = run([{ type: 'back' }, { type: 'back' }])
     expect(state.stack).toHaveLength(1)
     expect(currentView(state)).toMatchObject({ kind: 'menu', menu: 'root' })
   })
 
-  it('home vuelve a la raiz desde cualquier profundidad', () => {
+  it('home returns to the root from any depth', () => {
     const state = run([
-      { type: 'push', view: { kind: 'folder', path: 'C:/a', name: 'a', selected: 0 } },
-      { type: 'push', view: { kind: 'folder', path: 'C:/a/b', name: 'b', selected: 0 } },
+      { type: 'push', view: { kind: 'menu', menu: 'tracks', selected: 0 } },
+      { type: 'push', view: { kind: 'menu', menu: 'favorites', selected: 0 } },
       { type: 'home' }
     ])
     expect(state).toEqual(INITIAL_SCREEN_STATE)
   })
 
-  it('no apila dos veces la vista de reproduccion', () => {
+  it('does not push the playback view twice', () => {
     const state = run([{ type: 'openNowPlaying' }, { type: 'openNowPlaying' }])
     expect(state.stack.filter((view) => view.kind === 'nowPlaying')).toHaveLength(1)
   })
 })
 
-describe('busqueda al tipear', () => {
-  it('tipear en un menu abre la busqueda con esa letra', () => {
+describe('search while typing', () => {
+  it('typing in a menu opens search with that letter', () => {
     const state = run([{ type: 'typeChar', char: 'b' }])
     expect(currentView(state)).toEqual({ kind: 'search', query: 'b', selected: 0 })
   })
 
-  it('sigue acumulando letras sin apilar vistas nuevas', () => {
+  it('keeps accumulating letters without pushing new views', () => {
     const state = run([
       { type: 'typeChar', char: 'b' },
       { type: 'typeChar', char: 'e' },
@@ -106,7 +106,7 @@ describe('busqueda al tipear', () => {
     expect(state.stack).toHaveLength(2)
   })
 
-  it('escribir reinicia la seleccion (los resultados cambiaron)', () => {
+  it('typing resets the selection (the results changed)', () => {
     const state = run([
       { type: 'typeChar', char: 'b' },
       { type: 'move', delta: 4, itemCount: 10 },
@@ -115,7 +115,7 @@ describe('busqueda al tipear', () => {
     expect(currentView(state)).toMatchObject({ query: 'be', selected: 0 })
   })
 
-  it('backspace borra una letra', () => {
+  it('backspace deletes a letter', () => {
     const state = run([
       { type: 'typeChar', char: 'b' },
       { type: 'typeChar', char: 'e' },
@@ -124,26 +124,44 @@ describe('busqueda al tipear', () => {
     expect(currentView(state)).toMatchObject({ query: 'b' })
   })
 
-  it('backspace con la busqueda vacia sale de la busqueda', () => {
+  it('backspace on an empty search leaves the search', () => {
     const state = run([{ type: 'typeChar', char: 'b' }, { type: 'backspace' }, { type: 'backspace' }])
     expect(currentView(state)).toMatchObject({ kind: 'menu', menu: 'root' })
   })
 
-  it('backspace fuera de la busqueda no hace nada', () => {
+  it('backspace outside search does nothing', () => {
     const state = run([{ type: 'backspace' }])
     expect(state).toEqual(INITIAL_SCREEN_STATE)
   })
+
+  it('a held backspace empties the query but stays in the search', () => {
+    const state = run([
+      { type: 'typeChar', char: 'b' },
+      { type: 'backspace', fromRepeat: true },
+      { type: 'backspace', fromRepeat: true }
+    ])
+    expect(currentView(state)).toMatchObject({ kind: 'search', query: '' })
+  })
+
+  it('a held backspace still deletes letters', () => {
+    const state = run([
+      { type: 'typeChar', char: 'b' },
+      { type: 'typeChar', char: 'e' },
+      { type: 'backspace', fromRepeat: true }
+    ])
+    expect(currentView(state)).toMatchObject({ kind: 'search', query: 'b' })
+  })
 })
 
-describe('vista de texto', () => {
+describe('text prompt view', () => {
   const promptView = {
     kind: 'prompt' as const,
-    label: 'NOMBRE',
+    label: 'NAME',
     value: '',
     intent: { kind: 'newPlaylist' as const }
   }
 
-  it('tipear escribe en el prompt en vez de abrir la busqueda', () => {
+  it('typing writes into the prompt instead of opening search', () => {
     const state = run([
       { type: 'push', view: promptView },
       { type: 'typeChar', char: 'E' },
@@ -153,7 +171,7 @@ describe('vista de texto', () => {
     expect(state.stack).toHaveLength(2)
   })
 
-  it('backspace borra una letra del prompt', () => {
+  it('backspace deletes a letter from the prompt', () => {
     const state = run([
       { type: 'push', view: promptView },
       { type: 'typeChar', char: 'E' },
@@ -163,12 +181,22 @@ describe('vista de texto', () => {
     expect(currentView(state)).toMatchObject({ value: 'E' })
   })
 
-  it('backspace con el prompt vacio lo cierra', () => {
+  it('backspace on an empty prompt closes it', () => {
     const state = run([{ type: 'push', view: promptView }, { type: 'backspace' }])
     expect(currentView(state)).toMatchObject({ kind: 'menu', menu: 'root' })
   })
 
-  it('confirmar cierra el prompt', () => {
+  it('a held backspace does not close an empty prompt', () => {
+    const state = run([
+      { type: 'push', view: promptView },
+      { type: 'typeChar', char: 'X' },
+      { type: 'backspace', fromRepeat: true },
+      { type: 'backspace', fromRepeat: true }
+    ])
+    expect(currentView(state)).toMatchObject({ kind: 'prompt', value: '' })
+  })
+
+  it('confirming closes the prompt', () => {
     const state = run([
       { type: 'push', view: promptView },
       { type: 'typeChar', char: 'X' },
@@ -178,10 +206,10 @@ describe('vista de texto', () => {
   })
 })
 
-describe('modo mover', () => {
+describe('move mode', () => {
   const queueView = { kind: 'queue' as const, selected: 1, moving: null }
 
-  it('empezar a mover agarra la fila seleccionada', () => {
+  it('starting a move grabs the selected row', () => {
     const state = run([
       { type: 'push', view: queueView },
       { type: 'startMove', originId: 99, originOccurrence: 0 }
@@ -189,7 +217,7 @@ describe('modo mover', () => {
     expect(currentView(state)).toMatchObject({ moving: { from: 1, to: 1 } })
   })
 
-  it('mover arrastra la fila y la seleccion juntas', () => {
+  it('moving drags the row and the selection together', () => {
     const state = run([
       { type: 'push', view: queueView },
       { type: 'startMove', originId: 99, originOccurrence: 0 },
@@ -198,7 +226,7 @@ describe('modo mover', () => {
     expect(currentView(state)).toMatchObject({ moving: { from: 1, to: 2 }, selected: 2 })
   })
 
-  it('mover satura en los extremos en vez de envolver', () => {
+  it('moving saturates at the ends instead of wrapping around', () => {
     const state = run([
       { type: 'push', view: queueView },
       { type: 'startMove', originId: 99, originOccurrence: 0 },
@@ -207,7 +235,7 @@ describe('modo mover', () => {
     expect(currentView(state)).toMatchObject({ moving: { from: 1, to: 0 }, selected: 0 })
   })
 
-  it('soltar termina el modo mover', () => {
+  it('dropping ends move mode', () => {
     const state = run([
       { type: 'push', view: queueView },
       { type: 'startMove', originId: 99, originOccurrence: 0 },
@@ -217,7 +245,7 @@ describe('modo mover', () => {
     expect(currentView(state)).toMatchObject({ moving: null, selected: 2 })
   })
 
-  it('cancelar devuelve la seleccion a donde estaba', () => {
+  it('cancelling restores the selection to where it was', () => {
     const state = run([
       { type: 'push', view: queueView },
       { type: 'startMove', originId: 99, originOccurrence: 0 },
@@ -227,25 +255,25 @@ describe('modo mover', () => {
     expect(currentView(state)).toMatchObject({ moving: null, selected: 1 })
   })
 
-  it('MENU no sale de la vista mientras se esta moviendo', () => {
+  it('MENU does not leave the view while moving', () => {
     const state = run([
       { type: 'push', view: queueView },
       { type: 'startMove', originId: 99, originOccurrence: 0 },
       { type: 'moveHeld', delta: 2, itemCount: 4 },
       { type: 'back' }
     ])
-    // Si `back` confirmara la posicion (delegara en dropMove) en vez de
-    // cancelarla, `selected` quedaria en 3 en lugar de volver a 1.
+    // If `back` confirmed the position (delegated to dropMove) instead of
+    // cancelling it, `selected` would stay at 3 instead of returning to 1.
     expect(currentView(state)).toMatchObject({ kind: 'queue', moving: null, selected: 1 })
     expect(state.stack).toHaveLength(2)
   })
 
-  it('startMove no hace nada en una vista que no se reordena', () => {
+  it('startMove does nothing on a view that cannot be reordered', () => {
     const state = run([{ type: 'startMove', originId: 99, originOccurrence: 0 }])
     expect(state).toEqual(INITIAL_SCREEN_STATE)
   })
 
-  it('startMove guarda la identidad de la fila agarrada, no solo su posicion', () => {
+  it('startMove stores the identity of the grabbed row, not just its position', () => {
     const state = run([
       { type: 'push', view: queueView },
       { type: 'startMove', originId: 42, originOccurrence: 0 }
@@ -253,7 +281,7 @@ describe('modo mover', () => {
     expect(currentView(state)).toMatchObject({ moving: { originId: 42 } })
   })
 
-  it('startMove guarda tambien la ocurrencia, para desempatar pistas repetidas', () => {
+  it('startMove also stores the occurrence, to break ties on repeated tracks', () => {
     const state = run([
       { type: 'push', view: queueView },
       { type: 'startMove', originId: 42, originOccurrence: 1 }
@@ -261,7 +289,7 @@ describe('modo mover', () => {
     expect(currentView(state)).toMatchObject({ moving: { originId: 42, originOccurrence: 1 } })
   })
 
-  it('dropMove con `to` explicito suelta ahi, como hace un click', () => {
+  it('dropMove with an explicit `to` drops there, like a click does', () => {
     const state = run([
       { type: 'push', view: queueView },
       { type: 'startMove', originId: 99, originOccurrence: 0 },
@@ -272,7 +300,7 @@ describe('modo mover', () => {
   })
 })
 
-describe('menu contextual', () => {
+describe('context menu', () => {
   const target = {
     label: 'beat_v3.wav',
     index: 0,
@@ -280,13 +308,13 @@ describe('menu contextual', () => {
     trackId: 7
   }
 
-  it('se apila sobre la vista actual', () => {
+  it('is pushed on top of the current view', () => {
     const state = run([{ type: 'push', view: { kind: 'context', target, selected: 0 } }])
     expect(currentView(state)).toMatchObject({ kind: 'context' })
     expect(state.stack).toHaveLength(2)
   })
 
-  it('MENU lo cierra y vuelve a la lista', () => {
+  it('MENU closes it and returns to the list', () => {
     const state = run([
       { type: 'push', view: { kind: 'context', target, selected: 0 } },
       { type: 'back' }
@@ -294,7 +322,7 @@ describe('menu contextual', () => {
     expect(currentView(state)).toMatchObject({ kind: 'menu', menu: 'root' })
   })
 
-  it('tipear adentro del menu contextual no abre la busqueda', () => {
+  it('typing inside the context menu does not open search', () => {
     const state = run([
       { type: 'push', view: { kind: 'context', target, selected: 0 } },
       { type: 'typeChar', char: 'b' }

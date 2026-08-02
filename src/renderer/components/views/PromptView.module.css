@@ -32,8 +32,8 @@
 
 .error {
   font-size: 10px;
-  color: var(--lcd-ink);
-  background: var(--lcd-ink-dim);
+  color: var(--lcd-error-ink);
+  background: var(--lcd-error);
   padding: 2px 4px;
   align-self: flex-start;
 }

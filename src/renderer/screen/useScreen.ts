@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import type { ScanProgress, Track } from '@shared/types'
 import { audioEngine } from '../audio/AudioEngine'
-import { formatTime, usePlayback } from '../audio/usePlayback'
+import { usePlayback } from '../audio/usePlayback'
 import { startIndexForEntry } from './playlistPlayback'
 import {
   buildQueueRows,
@@ -20,25 +20,30 @@ import {
   type View
 } from './viewStack'
 
-/** Una fila de la pantalla. La vista solo dibuja esto; no sabe de donde salio. */
+/** A row of the screen. The view only draws this; it does not know where it
+ *  came from. */
 export interface ScreenItem {
   key: string
   label: string
-  /** Texto chico a la derecha: carpeta, duracion, cantidad. */
+  /** Small text on the right: folder, duration, count. */
   meta?: string
   /** true dibuja la flechita de "entra a otro nivel". */
   drillsDown?: boolean
-  /** Presente solo en filas que son pistas: habilita marcarlas como favoritas. */
+  /** Present only on rows that are tracks: enables marking them as favorites. */
   trackId?: number
   favorite?: boolean
-  /** Presente solo en filas donde tiene sentido el menu contextual. */
+  /** Draws the trash icon on the row. Only on lists where removing a track from
+   *  the library is what the user means -- not in the queue or a playlist,
+   *  where REMOVE already means "take it out of this list". */
+  canHide?: boolean
+  /** Present only on rows where the context menu makes sense. */
   contextTarget?: ContextTarget
-  /** Rotulo de seccion (AHORA/SIGUIENTE/LUEGO) para dibujar arriba de esta
-   *  fila. No es una fila en si: no ocupa un indice ni se puede seleccionar. */
+  /** Section header (NOW/NEXT UP/LATER) to draw above this row. Not a row
+   *  itself: it takes no index and cannot be selected. */
   sectionHeader?: string
-  /** Fila de accion (GUARDAR COMO PLAYLIST, + NUEVA PLAYLIST) en vez de una
-   *  pista: la aritmetica del modo mover la ignora, porque no es un lugar
-   *  valido donde soltar ni algo que se pueda reordenar. */
+  /** An action row (SAVE AS PLAYLIST, + NEW PLAYLIST) rather than a track: the
+   *  move-mode arithmetic ignores it, because it is neither a valid place to
+   *  drop nor something that can be reordered. */
   isAction?: boolean
   activate: () => void | Promise<void>
 }
@@ -51,33 +56,47 @@ export interface ScreenController {
   loading: boolean
   scan: ScanProgress | null
   dispatch: (action: ScreenAction) => void
-  /** Ejecuta la fila seleccionada. */
+  /** Runs the selected row. */
   activate: () => void
-  /** Suelta la fila agarrada en modo mover sobre la fila `index`. Es lo que
-   *  usa un click de mouse (a diferencia de OK, que suelta donde ya estaba
-   *  el arrastre). */
+  /** Drops the row held in move mode onto row `index`. This is what a mouse
+   *  click uses (unlike OK, which drops wherever the drag already was). */
   dropAt: (index: number) => void
   moveBy: (delta: number) => void
-  /** Marca/desmarca la pista seleccionada, o la que suena si no hay lista. */
+  /** Toggles the selected track, or the one playing when there is no list. */
   toggleFavorite: () => void
-  /** Abre el menu contextual sobre la fila `index`, si tiene acciones definidas. */
+  /** Opens the context menu on row `index`, if it has any actions defined. */
   openContextMenu: (index: number) => void
-  /** Aplica el `PromptIntent` de la vista actual. No hace nada fuera de `prompt`. */
+  /** Hides a track from the library. The file on disk is left alone. */
+  hideTrack: (trackId: number, label: string) => void
+  /** The track hidden a moment ago, while it can still be put back. */
+  undo: { trackId: number; label: string } | null
+  undoHide: () => void
+  /** Applies the current view's `PromptIntent`. A no-op outside `prompt`. */
   confirmPrompt: () => void
-  /** Mensaje de error del prompt actual (nombre repetido), o null si no hay. */
+  /** Error message for the current prompt (duplicate name), or null if none. */
   promptError: string | null
 }
 
 const ROOT_MENU: Array<{ id: string; label: string; view: View }> = [
-  { id: 'folders', label: 'CARPETAS', view: { kind: 'menu', menu: 'folders', selected: 0 } },
-  { id: 'recent', label: 'RECIENTES', view: { kind: 'menu', menu: 'recent', selected: 0 } },
-  { id: 'favorites', label: 'FAVORITOS', view: { kind: 'menu', menu: 'favorites', selected: 0 } },
+  { id: 'tracks', label: 'ALL TRACKS', view: { kind: 'menu', menu: 'tracks', selected: 0 } },
+  { id: 'recent', label: 'RECENT', view: { kind: 'menu', menu: 'recent', selected: 0 } },
+  { id: 'favorites', label: 'FAVORITES', view: { kind: 'menu', menu: 'favorites', selected: 0 } },
   { id: 'playlists', label: 'PLAYLISTS', view: { kind: 'menu', menu: 'playlists', selected: 0 } },
-  { id: 'queue', label: 'COLA', view: { kind: 'queue', selected: 0, moving: null } },
-  { id: 'settings', label: 'AJUSTES', view: { kind: 'menu', menu: 'settings', selected: 0 } }
+  { id: 'queue', label: 'QUEUE', view: { kind: 'queue', selected: 0, moving: null } },
+  { id: 'settings', label: 'SETTINGS', view: { kind: 'menu', menu: 'settings', selected: 0 } }
 ]
 
-const LIST_LIMIT = 300
+/**
+ * How many rows a list view loads at once.
+ *
+ * ALL TRACKS is the whole library in one flat list, so a small cap here would
+ * silently hide files. Every row is mounted (no virtualization), which is fine
+ * for a real library of a few hundred to a few thousand files.
+ */
+const LIST_LIMIT = 5000
+
+/** How long the offer to undo a hidden track stays on screen. */
+const UNDO_WINDOW_MS = 5000
 
 export function useScreen(): ScreenController {
   const [state, dispatch] = useReducer(screenReducer, INITIAL_SCREEN_STATE)
@@ -85,16 +104,18 @@ export function useScreen(): ScreenController {
   const [loading, setLoading] = useState(false)
   const [scan, setScan] = useState<ScanProgress | null>(null)
   const [revision, setRevision] = useState(0)
+  // The track hidden a moment ago, while the offer to undo is still standing.
+  const [undo, setUndo] = useState<{ trackId: number; label: string } | null>(null)
   const [promptError, setPromptError] = useState<string | null>(null)
-  // La vista COLA lee el motor directo, no la base: sin esto, encolar o
-  // pasar a la siguiente pista no refrescaria lo que se ve.
+  // The QUEUE view reads the engine directly rather than the database: without
+  // this, queueing or moving to the next track would not refresh what is shown.
   const playback = usePlayback()
 
   const view = currentView(state)
   const selected = currentSelection(state)
 
-  // La pista que se esta agregando a una playlist, si la hay: viene de la
-  // vista `context` mas cercana en la pila (el picker se apila arriba de ella).
+  // The track being added to a playlist, if any: it comes from the nearest
+  // `context` view on the stack (the picker is pushed on top of it).
   const pendingTrackId = useMemo(() => {
     for (let index = state.stack.length - 1; index >= 0; index--) {
       const entry = state.stack[index]
@@ -106,35 +127,49 @@ export function useScreen(): ScreenController {
   useEffect(() => {
     return window.waverr.library.onScanProgress((progress) => {
       setScan(progress.phase === 'done' ? null : progress)
-      // Al terminar el escaneo la lista visible puede haber quedado vieja.
+      // Once the scan finishes, the visible list may have gone stale.
       if (progress.phase === 'done') setRevision((value) => value + 1)
     })
   }, [])
 
-  // Clave estable de la vista: solo se recarga cuando cambia lo que se mira,
-  // no cuando se mueve la seleccion.
+  // Stable key for the view: it only reloads when what is being looked at
+  // changes, not when the selection moves.
   const viewKey = useMemo(() => describeView(view), [view])
 
-  // Evita que una carga lenta pise el resultado de una carga posterior.
+  // Stops a slow load from overwriting the result of a later one.
   const loadTokenRef = useRef(0)
 
-  // La fila sobre la que se abrio el menu contextual actual, si la hay.
-  // "REPRODUCIR AHORA" la reusa tal cual para heredar el mismo contexto
-  // (la lista entera que se estaba mirando) que una activacion normal:
-  // asi no colapsa a una lista de un solo tema.
+  // The row the current context menu was opened on, if any. "PLAY NOW" reuses
+  // it as-is so it inherits the same context (the whole list that was on
+  // screen) as a normal activation, instead of collapsing to a one-track list.
   const contextRowActivateRef = useRef<(() => void | Promise<void>) | null>(null)
+
+  // Read by `undoHide`, which must not be rebuilt every time the offer changes.
+  const undoRef = useRef(undo)
+  undoRef.current = undo
+
+  // The offer stands for a few seconds. Hiding another track replaces it, so
+  // only the most recent one can be taken back -- past that, HIDDEN TRACKS is
+  // where they are restored from.
+  useEffect(() => {
+    if (!undo) return
+    const timer = setTimeout(() => setUndo(null), UNDO_WINDOW_MS)
+    return () => clearTimeout(timer)
+  }, [undo])
 
   useEffect(() => {
     const token = ++loadTokenRef.current
     let cancelled = false
 
     async function load(): Promise<void> {
-      // La lista anterior se descarta de entrada: si se dejara dibujada
-      // mientras carga la nueva, apretar OK rapido activaria la fila vieja.
+      // The previous list is dropped up front: if it stayed drawn while the new
+      // one loads, a quick OK would activate the old row.
       setItems([])
       setLoading(true)
       setPromptError(null)
-      const next = await buildItems(view, dispatch, pendingTrackId, contextRowActivateRef.current)
+      const next = await buildItems(view, dispatch, pendingTrackId, contextRowActivateRef.current, () =>
+        setRevision((value) => value + 1)
+      )
       if (!cancelled && token === loadTokenRef.current) {
         setItems(next)
         setLoading(false)
@@ -145,51 +180,50 @@ export function useScreen(): ScreenController {
     return () => {
       cancelled = true
     }
-    // `view` se reconstruye en cada movimiento de seleccion; `viewKey` no.
-    // `playback.track?.id` y `playback.manualCount` cubren la vista COLA: no
-    // tiene una clave propia (`viewKey` es fijo, 'queue'), asi que sin esto no
-    // se enteraria de que cambio AHORA o de que se encolo/saco algo a mano.
+    // `view` is rebuilt on every selection move; `viewKey` is not.
+    // `playback.track?.id` and `playback.manualCount` cover the QUEUE view: it
+    // has no key of its own (`viewKey` is the constant 'queue'), so without
+    // them it would never notice that NOW changed or that something was queued
+    // or removed by hand.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewKey, revision, pendingTrackId, playback.track?.id, playback.manualCount])
 
-  // Cuantas filas cuentan para la aritmetica del modo mover: todo salvo las
-  // filas de accion (GUARDAR COMO PLAYLIST). Sin este filtro el marcador
-  // podria pararse sobre esa fila, que no es una pista ni un lugar valido
-  // donde soltar.
+  // How many rows count for the move-mode arithmetic: everything except action
+  // rows (SAVE AS PLAYLIST). Without this filter the marker could come to rest
+  // on that row, which is neither a track nor a valid place to drop.
   const movableRowCount = useMemo(() => items.filter((item) => !item.isAction).length, [items])
 
-  // Suelta la fila agarrada en modo mover en la posicion `toIndex`, sin
-  // importar si vino de OK (posicion ya guardada en `moving.to`) o de un
-  // click (la fila que se toco). Comun a `activate` y `dropAt` para que el
-  // mouse y el teclado sueltan exactamente igual.
+  // Drops the row held in move mode at position `toIndex`, whether it came from
+  // OK (position already stored in `moving.to`) or a click (the row that was
+  // touched). Shared by `activate` and `dropAt` so mouse and keyboard drop
+  // exactly the same way.
   const performDrop = useCallback(
     (toIndex: number) => {
       const view_ = view
       if ((view_.kind !== 'queue' && view_.kind !== 'playlist') || !view_.moving) return
 
       const { from, originId, originOccurrence } = view_.moving
-      // `movableRowCount` sale de `items` (estado de React): el efecto de
-      // carga hace `setItems([])` antes de cada recarga, y una recarga se
-      // dispara justo si la pista actual termina a mitad del arrastre. En esa
-      // ventana `movableRowCount` cae a 0 aunque la cola real no este vacia;
-      // clampear contra eso mandaria el destino al principio en vez de donde
-      // el usuario ya habia dejado el marcador. Por eso el fallback es
-      // `toIndex` tal cual: si de verdad no hay nada que mover, la resolucion
-      // por identidad de mas abajo (o `movePlaylistItem`) no encuentra nada
-      // valido y no pasa nada.
+      // `movableRowCount` comes from `items` (React state): the load effect
+      // does `setItems([])` before every reload, and a reload is triggered
+      // exactly when the current track ends mid-drag. In that window
+      // `movableRowCount` drops to 0 even though the real queue is not empty;
+      // clamping against that would send the target back to the start instead
+      // of where the user had already left the marker. That is why the
+      // fallback is `toIndex` as-is: if there truly is nothing to move, the
+      // identity resolution below (or `movePlaylistItem`) finds nothing valid
+      // and nothing happens.
       const to = movableRowCount > 0 ? Math.max(0, Math.min(toIndex, movableRowCount - 1)) : Math.max(0, toIndex)
 
       if (view_.kind === 'queue') {
-        // La lista pudo reconstruirse mientras se arrastraba (una pista que
-        // termina consume la cola manual y corre los indices de fila): el
-        // origen se resuelve por la identidad de la pista agarrada
-        // (`originId` + `originOccurrence`, para desempatar si esta
-        // encolada mas de una vez), no por el indice de fila que se guardo
-        // al empezar.
+        // The list may have been rebuilt while dragging (a track ending
+        // consumes the manual queue and shifts every row index): the origin is
+        // resolved by the identity of the grabbed track (`originId` +
+        // `originOccurrence`, to break the tie if it is queued more than once),
+        // not by the row index that was stored when the drag started.
         const rows = buildQueueRows(audioEngine.getQueueView())
         const originIndex = resolveManualIndexById(rows, originId, originOccurrence)
-        // Si ya no esta (se consumio sola durante el arrastre) no hay nada
-        // que mover: soltar no hace nada distinto de cancelar.
+        // If it is no longer there (consumed on its own during the drag) there
+        // is nothing to move: dropping does nothing different from cancelling.
         if (originIndex !== null) {
           audioEngine.moveInQueue(originIndex, manualIndexForDrop(rows, to))
         }
@@ -205,7 +239,7 @@ export function useScreen(): ScreenController {
 
   const activate = useCallback(() => {
     const view_ = view
-    // Con una fila agarrada, OK la suelta donde ya estaba en vez de activarla.
+    // With a row held, OK drops it where it already was instead of activating it.
     if ((view_.kind === 'queue' || view_.kind === 'playlist') && view_.moving) {
       performDrop(view_.moving.to)
       return
@@ -220,8 +254,8 @@ export function useScreen(): ScreenController {
   const moveBy = useCallback(
     (delta: number) => {
       const view_ = view
-      // Con una fila agarrada, solo cuentan las filas de pista: el marcador
-      // no se puede parar sobre GUARDAR COMO PLAYLIST.
+      // With a row held, only track rows count: the marker cannot come to rest
+      // on SAVE AS PLAYLIST.
       const moving = (view_.kind === 'queue' || view_.kind === 'playlist') && view_.moving !== null
       dispatch({ type: 'move', delta, itemCount: moving ? movableRowCount : items.length })
     },
@@ -229,8 +263,8 @@ export function useScreen(): ScreenController {
   )
 
   const toggleFavorite = useCallback(() => {
-    // En una lista manda la fila seleccionada; en la vista de reproduccion,
-    // la pista que esta sonando.
+    // In a list the selected row wins; in the playback view, the track that is
+    // playing.
     const trackId = items[selected]?.trackId ?? audioEngine.getState().track?.id
     if (trackId === undefined) return
 
@@ -238,6 +272,30 @@ export function useScreen(): ScreenController {
       setRevision((value) => value + 1)
     })
   }, [items, selected])
+
+  /**
+   * Hides a track and offers to put it back.
+   *
+   * Pruning a folder of samples means doing this many times in a row, so it
+   * takes effect immediately rather than asking first -- the undo is what makes
+   * that safe. Anything hidden is still listed under SETTINGS > HIDDEN TRACKS
+   * once the offer expires.
+   */
+  const hideTrack = useCallback((trackId: number, label: string) => {
+    void window.waverr.library.setTrackHidden(trackId, true).then(() => {
+      setUndo({ trackId, label })
+      setRevision((value) => value + 1)
+    })
+  }, [])
+
+  const undoHide = useCallback(() => {
+    const pending = undoRef.current
+    if (!pending) return
+    setUndo(null)
+    void window.waverr.library.setTrackHidden(pending.trackId, false).then(() => {
+      setRevision((value) => value + 1)
+    })
+  }, [])
 
   const openContextMenu = useCallback(
     (index: number) => {
@@ -259,7 +317,7 @@ export function useScreen(): ScreenController {
     if (intent.kind === 'newPlaylist') {
       const playlist = await window.waverr.library.createPlaylist(value)
       if (!playlist) {
-        setPromptError('YA EXISTE')
+        setPromptError('ALREADY EXISTS')
         return
       }
       if (intent.trackIdToAdd !== undefined) {
@@ -267,7 +325,7 @@ export function useScreen(): ScreenController {
       }
     } else if (intent.kind === 'renamePlaylist') {
       if (!(await window.waverr.library.renamePlaylist(intent.playlistId, value))) {
-        setPromptError('YA EXISTE')
+        setPromptError('ALREADY EXISTS')
         return
       }
     } else {
@@ -276,21 +334,22 @@ export function useScreen(): ScreenController {
         .filter((track): track is Track => track !== null)
         .map((track) => track.id)
       if (!(await window.waverr.library.createPlaylistFromTracks(value, trackIds))) {
-        setPromptError('YA EXISTE')
+        setPromptError('ALREADY EXISTS')
         return
       }
     }
 
     setPromptError(null)
     dispatch({ type: 'confirmPrompt' })
-    // Si el prompt vino del picker de "AGREGAR A PLAYLIST" (trae la pista a
-    // agregar), tiene que terminar en el mismo lugar que elegir una playlist
-    // ya existente: la lista de origen. La pila en ese caso es
-    // [..., lista, context, playlistPicker, prompt]; 'confirmPrompt' ya saco
-    // el prompt, faltan otros dos 'back' para sacar el picker y el menu
-    // contextual. El otro uso de newPlaylist (desde la vista PLAYLISTS, sin
-    // trackIdToAdd) no tiene ese picker ni ese context debajo: ahi hay que
-    // quedarse viendo la lista de playlists con la recien creada.
+    // If the prompt came from the "ADD TO PLAYLIST" picker (it carries the
+    // track to add), it has to land in the same place as choosing an existing
+    // playlist: the list it came from. The stack in that case is
+    // [..., list, context, playlistPicker, prompt]; 'confirmPrompt' already
+    // popped the prompt, so two more 'back's are needed to pop the picker and
+    // the context menu. The other use of newPlaylist (from the PLAYLISTS view,
+    // with no trackIdToAdd) has neither that picker nor that context underneath:
+    // there, the user should stay looking at the playlist list with the new one
+    // in it.
     if (intent.kind === 'newPlaylist' && intent.trackIdToAdd !== undefined) {
       dispatch({ type: 'back' })
       dispatch({ type: 'back' })
@@ -311,6 +370,9 @@ export function useScreen(): ScreenController {
     moveBy,
     toggleFavorite,
     openContextMenu,
+    hideTrack,
+    undo,
+    undoHide,
     confirmPrompt: () => void confirmPrompt(),
     promptError
   }
@@ -320,8 +382,6 @@ function describeView(view: View): string {
   switch (view.kind) {
     case 'menu':
       return `menu:${view.menu}`
-    case 'folder':
-      return `folder:${view.path}`
     case 'search':
       return `search:${view.query}`
     case 'queue':
@@ -341,54 +401,47 @@ function titleFor(view: View): string {
   switch (view.kind) {
     case 'menu':
       return MENU_TITLES[view.menu]
-    case 'folder':
-      return view.name.toUpperCase()
     case 'search':
-      return `BUSCAR: ${view.query.toUpperCase()}`
+      return `SEARCH: ${view.query.toUpperCase()}`
     case 'queue':
-      return 'COLA'
+      return 'QUEUE'
     case 'playlist':
       return view.name.toUpperCase()
     case 'prompt':
       return view.label
     case 'context':
-      return 'ACCIONES'
+      return 'ACTIONS'
     case 'nowPlaying':
-      return 'REPRODUCIENDO'
+      return 'NOW PLAYING'
   }
 }
 
 const MENU_TITLES: Record<MenuId, string> = {
   root: 'WAVERR',
-  folders: 'CARPETAS',
-  recent: 'RECIENTES',
-  favorites: 'FAVORITOS',
+  tracks: 'ALL TRACKS',
+  recent: 'RECENT',
+  favorites: 'FAVORITES',
   playlists: 'PLAYLISTS',
-  playlistPicker: 'A PLAYLIST',
-  settings: 'AJUSTES'
+  playlistPicker: 'ADD TO PLAYLIST',
+  settings: 'SETTINGS',
+  hiddenTracks: 'HIDDEN TRACKS'
 }
 
 async function buildItems(
   view: View,
   dispatch: (action: ScreenAction) => void,
   pendingTrackId: number | null,
-  contextRowActivate: (() => void | Promise<void>) | null
+  contextRowActivate: (() => void | Promise<void>) | null,
+  /** Rebuilds the current list. For rows that change the data underneath them
+   *  and stay where they are, which navigation alone would not pick up. */
+  refresh: () => void
 ): Promise<ScreenItem[]> {
   switch (view.kind) {
     case 'nowPlaying':
       return []
 
     case 'menu':
-      return buildMenuItems(view.menu, dispatch, pendingTrackId)
-
-    case 'folder': {
-      const tracks = await window.waverr.library.search({
-        folderPath: view.path,
-        sort: 'name',
-        limit: LIST_LIMIT
-      })
-      return tracks.map(trackItem(tracks, dispatch))
-    }
+      return buildMenuItems(view.menu, dispatch, pendingTrackId, refresh)
 
     case 'search': {
       const tracks = await window.waverr.library.search({
@@ -404,12 +457,12 @@ async function buildItems(
 
     case 'playlist': {
       const entries = await window.waverr.library.listPlaylistTracks(view.playlistId)
-      if (entries.length === 0) return [emptyItem('PLAYLIST VACIA')]
+      if (entries.length === 0) return [emptyItem('PLAYLIST EMPTY')]
 
       return entries.map((entry, index) => ({
         key: `item-${entry.itemId}`,
         label: `${entry.missing ? '! ' : ''}${displayName(entry)}`,
-        meta: entry.durationMs ? formatTime(entry.durationMs) : entry.ext.slice(1).toUpperCase(),
+        meta: entry.folder,
         trackId: entry.id,
         favorite: entry.favorite,
         contextTarget: {
@@ -420,13 +473,17 @@ async function buildItems(
           playlistId: view.playlistId,
           itemId: entry.itemId
         },
+        // Stays on the playlist, same as any other track row -- unless this is
+        // the one already playing, which can only mean "take me to it".
         activate: () => {
-          // Las perdidas se saltean: si la elegida no suena, arranca en la
-          // primera reproducible que venga despues. Si no queda ninguna, no
-          // arranca nada (y la pantalla no se va a NOW PLAYING de arriba).
+          if (audioEngine.getState().track?.id === entry.id) {
+            dispatch({ type: 'openNowPlaying' })
+            return
+          }
+          // Missing files are skipped: if the chosen one cannot play, start at
+          // the first playable track after it. If none is left, start nothing.
           const startIndex = startIndexForEntry(entries, entry.itemId)
           if (startIndex === null) return
-          dispatch({ type: 'openNowPlaying' })
           void audioEngine.playNow(
             entries.filter((candidate) => !candidate.missing),
             startIndex
@@ -447,7 +504,8 @@ async function buildItems(
           items.push({
             key: 'now',
             label: displayName(row.track),
-            sectionHeader: 'AHORA',
+            meta: row.track.folder,
+            sectionHeader: 'NOW',
             activate: () => dispatch({ type: 'openNowPlaying' })
           })
           continue
@@ -458,62 +516,57 @@ async function buildItems(
           items.push({
             key: `manual-${manualIndex}-${row.track.id}`,
             label: displayName(row.track),
-            meta: formatTime(row.track.durationMs ?? 0),
-            // Rotulo solo en la primera fila de la seccion: no se repite en
-            // cada pista encolada.
-            sectionHeader: manualIndex === 0 ? 'SIGUIENTE' : undefined,
+            meta: row.track.folder,
+            // Header only on the first row of the section, so it does not
+            // repeat on every queued track.
+            sectionHeader: manualIndex === 0 ? 'NEXT UP' : undefined,
             trackId: row.track.id,
             favorite: row.track.favorite,
             contextTarget: {
               label: displayName(row.track),
-              // El indice es dentro de la cola manual: es lo que entienden
-              // moveInQueue y removeFromQueue. Sirve solo de referencia
-              // inicial (ver comentario en ContextTarget): MOVER y QUITAR
-              // resuelven por trackId + occurrence, no por este indice.
+              // The index is within the manual queue: what moveInQueue and
+              // removeFromQueue understand. Only an initial reference (see the
+              // comment on ContextTarget): MOVE and REMOVE resolve by trackId +
+              // occurrence, not by this index.
               index: manualIndex,
               origin: 'queue',
               trackId: row.track.id,
-              // Encolar la misma pista dos veces esta permitido a proposito:
-              // este ordinal es lo que permite distinguir esta copia de otra
-              // igual si hay que volver a encontrarla despues.
+              // Queueing the same track twice is allowed on purpose: this
+              // ordinal is what lets this copy be told apart from another equal
+              // one if it needs to be found again later.
               occurrence: occurrenceInManual(rows, manualIndex)
             },
-            activate: () => {
-              // Saltar directo a un encolado: las que quedaron antes en la
-              // cola manual no se pierden, siguen ahi para sonar despues.
-              dispatch({ type: 'openNowPlaying' })
-              void audioEngine.skipToManual(manualIndex)
-            }
+            // Jumping straight to a queued track: the ones ahead of it in the
+            // manual queue are not lost, they stay there to play afterwards.
+            // Stays on the queue, so the rest of it is still in view.
+            activate: () => void audioEngine.skipToManual(manualIndex)
           })
           continue
         }
 
-        // LUEGO: nunca lleva contextTarget, asi que nunca ofrece MOVER/QUITAR.
+        // LATER: never carries a contextTarget, so it never offers MOVE/REMOVE.
         const upcomingIndex = row.upcomingIndex
         items.push({
           key: `upcoming-${upcomingIndex}-${row.track.id}`,
           label: displayName(row.track),
-          meta: formatTime(row.track.durationMs ?? 0),
-          sectionHeader: upcomingIndex === 0 ? 'LUEGO' : undefined,
+          meta: row.track.folder,
+          sectionHeader: upcomingIndex === 0 ? 'LATER' : undefined,
           trackId: row.track.id,
           favorite: row.track.favorite,
-          activate: () => {
-            dispatch({ type: 'openNowPlaying' })
-            void audioEngine.playNow(upcomingTracks, upcomingIndex)
-          }
+          activate: () => void audioEngine.playNow(upcomingTracks, upcomingIndex)
         })
       }
 
-      if (items.length === 0) return [emptyItem('COLA VACIA')]
+      if (items.length === 0) return [emptyItem('QUEUE EMPTY')]
 
       items.push({
         key: 'save',
-        label: 'GUARDAR COMO PLAYLIST',
+        label: 'SAVE AS PLAYLIST',
         isAction: true,
         activate: () =>
           dispatch({
             type: 'push',
-            view: { kind: 'prompt', label: 'NOMBRE', value: '', intent: { kind: 'saveQueue' } }
+            view: { kind: 'prompt', label: 'NAME', value: '', intent: { kind: 'saveQueue' } }
           })
       })
 
@@ -528,7 +581,8 @@ async function buildItems(
 async function buildMenuItems(
   menu: string,
   dispatch: (action: ScreenAction) => void,
-  pendingTrackId: number | null
+  pendingTrackId: number | null,
+  refresh: () => void
 ): Promise<ScreenItem[]> {
   switch (menu) {
     case 'root':
@@ -539,36 +593,63 @@ async function buildMenuItems(
         activate: () => dispatch({ type: 'push', view: entry.view })
       }))
 
-    case 'folders': {
-      const folders = await window.waverr.library.listFolders()
-      if (folders.length === 0) return [emptyItem('SIN CARPETAS')]
-      return folders.map((folder) => ({
-        key: folder.path,
-        label: folder.name.toUpperCase(),
-        meta: String(folder.trackCount),
-        drillsDown: true,
-        activate: () =>
-          dispatch({
-            type: 'push',
-            view: { kind: 'folder', path: folder.path, name: folder.name, selected: 0 }
-          })
-      }))
+    /**
+     * The whole library as one flat list. There is deliberately no folder
+     * browsing: a producer's library is dozens of project folders, and having
+     * to drill into each one to reach a file is backwards.
+     *
+     * Sorting groups tracks by folder so files from the same session stay
+     * together, but it is still a single scrollable list. Because `trackItem`
+     * hands this entire array to the player as the playback context, skipping
+     * forward walks the whole library instead of stopping at a folder edge.
+     */
+    case 'tracks': {
+      const tracks = await window.waverr.library.search({ sort: 'folder', limit: LIST_LIMIT })
+      if (tracks.length === 0) return [emptyItem('NO TRACKS')]
+      return tracks.map(trackItem(tracks, dispatch))
     }
 
     case 'recent': {
       const tracks = await window.waverr.library.search({ sort: 'recent', limit: LIST_LIMIT })
-      if (tracks.length === 0) return [emptyItem('NADA TODAVIA')]
+      if (tracks.length === 0) return [emptyItem('NOTHING YET')]
       return tracks.map(trackItem(tracks, dispatch))
     }
 
     case 'favorites': {
       const tracks = await window.waverr.library.search({
         onlyFavorites: true,
-        sort: 'name',
+        sort: 'folder',
         limit: LIST_LIMIT
       })
-      if (tracks.length === 0) return [emptyItem('SIN FAVORITOS')]
+      if (tracks.length === 0) return [emptyItem('NO FAVORITES')]
       return tracks.map(trackItem(tracks, dispatch))
+    }
+
+    /**
+     * Everything hidden from the library, so a mistake is never permanent.
+     * These rows restore instead of playing: there is nothing to listen to
+     * here, the whole point of the screen is putting a file back.
+     */
+    case 'hiddenTracks': {
+      const tracks = await window.waverr.library.search({
+        onlyHidden: true,
+        sort: 'folder',
+        limit: LIST_LIMIT
+      })
+      if (tracks.length === 0) return [emptyItem('NOTHING HIDDEN')]
+
+      return tracks.map((track) => ({
+        key: String(track.id),
+        label: displayName(track),
+        meta: track.folder,
+        trackId: track.id,
+        activate: async () => {
+          await window.waverr.library.setTrackHidden(track.id, false)
+          // The row has to leave a list the user is still looking at, and
+          // nothing about the view itself changed, so ask for a rebuild.
+          refresh()
+        }
+      }))
     }
 
     case 'playlists': {
@@ -576,11 +657,11 @@ async function buildMenuItems(
       const items: ScreenItem[] = [
         {
           key: 'new',
-          label: '+ NUEVA PLAYLIST',
+          label: '+ NEW PLAYLIST',
           activate: () =>
             dispatch({
               type: 'push',
-              view: { kind: 'prompt', label: 'NOMBRE', value: '', intent: { kind: 'newPlaylist' } }
+              view: { kind: 'prompt', label: 'NAME', value: '', intent: { kind: 'newPlaylist' } }
             })
         }
       ]
@@ -615,19 +696,19 @@ async function buildMenuItems(
     }
 
     case 'playlistPicker': {
-      // Submenu de AGREGAR A PLAYLIST. La pista objetivo viene de la vista
-      // `context` que quedo abajo en la pila.
+      // Submenu of ADD TO PLAYLIST. The target track comes from the `context`
+      // view left underneath it on the stack.
       const playlists = await window.waverr.library.listPlaylists()
       const items: ScreenItem[] = [
         {
           key: 'new',
-          label: '+ NUEVA PLAYLIST',
+          label: '+ NEW PLAYLIST',
           activate: () =>
             dispatch({
               type: 'push',
               view: {
                 kind: 'prompt',
-                label: 'NOMBRE',
+                label: 'NAME',
                 value: '',
                 intent: { kind: 'newPlaylist', trackIdToAdd: pendingTrackId ?? undefined }
               }
@@ -644,8 +725,8 @@ async function buildMenuItems(
             if (pendingTrackId !== null) {
               await window.waverr.library.addToPlaylist(playlist.id, pendingTrackId)
             }
-            // Vuelve a la lista de donde se venia, sin quedar navegando
-            // adentro de la playlist.
+            // Back to the list the user came from, rather than leaving them
+            // navigating inside the playlist.
             dispatch({ type: 'back' })
             dispatch({ type: 'back' })
           }
@@ -664,25 +745,40 @@ async function buildMenuItems(
       const actions: ScreenItem[] = [
         {
           key: 'add',
-          label: '+ AGREGAR CARPETA',
+          label: '+ ADD FOLDER',
           activate: async () => {
             await window.waverr.library.pickRoot()
           }
         },
         {
           key: 'rescan',
-          label: 'RESCANEAR TODO',
+          label: 'RESCAN ALL',
           activate: async () => {
             await window.waverr.library.rescan()
           }
         },
         {
           key: 'stats',
-          label: `${stats.trackCount} PISTAS`,
-          meta: stats.missingCount > 0 ? `${stats.missingCount} PERDIDAS` : undefined,
+          label: `${stats.trackCount} TRACKS`,
+          meta: stats.missingCount > 0 ? `${stats.missingCount} MISSING` : undefined,
           activate: () => {}
         }
       ]
+
+      // Only worth a row once something is actually hidden.
+      if (stats.hiddenCount > 0) {
+        actions.push({
+          key: 'hidden',
+          label: 'HIDDEN TRACKS',
+          meta: String(stats.hiddenCount),
+          drillsDown: true,
+          activate: () =>
+            dispatch({
+              type: 'push',
+              view: { kind: 'menu', menu: 'hiddenTracks', selected: 0 }
+            })
+        })
+      }
 
       const rootItems: ScreenItem[] = roots.map((root) => ({
         key: `root-${root.id}`,
@@ -703,8 +799,8 @@ async function buildMenuItems(
 }
 
 /**
- * Acciones sobre una fila. MOVER y QUITAR solo aparecen donde tienen sentido:
- * en la cola y adentro de una playlist.
+ * Actions on a row. MOVE and REMOVE only appear where they make sense: in the
+ * queue and inside a playlist.
  */
 async function buildContextItems(
   target: ContextTarget,
@@ -718,19 +814,19 @@ async function buildContextItems(
 
     items.push({
       key: 'play',
-      label: 'REPRODUCIR AHORA',
+      label: 'PLAY NOW',
       activate: async () => {
         dispatch({ type: 'back' })
-        // Reusa la activacion normal de la fila (la misma que corre un
-        // click o un OK directo): hereda asi la lista de origen entera como
-        // contexto, en vez de colapsarla a una sola pista.
+        // Reuses the row's normal activation (the same one a click or a direct
+        // OK runs): that way it inherits the whole originating list as the
+        // context, instead of collapsing it to a single track.
         if (contextRowActivate) await contextRowActivate()
       }
     })
 
     items.push({
       key: 'next',
-      label: 'ENCOLAR SIGUIENTE',
+      label: 'PLAY NEXT',
       activate: async () => {
         const track = await window.waverr.library.getTrack(trackId)
         if (track) audioEngine.enqueueNext(track)
@@ -740,7 +836,7 @@ async function buildContextItems(
 
     items.push({
       key: 'last',
-      label: 'ENCOLAR AL FINAL',
+      label: 'ADD TO QUEUE',
       activate: async () => {
         const track = await window.waverr.library.getTrack(trackId)
         if (track) audioEngine.enqueue(track)
@@ -750,7 +846,7 @@ async function buildContextItems(
 
     items.push({
       key: 'playlist',
-      label: 'AGREGAR A PLAYLIST',
+      label: 'ADD TO PLAYLIST',
       drillsDown: true,
       activate: () =>
         dispatch({
@@ -761,7 +857,7 @@ async function buildContextItems(
 
     items.push({
       key: 'favorite',
-      label: 'FAVORITO',
+      label: 'FAVORITE',
       activate: async () => {
         await window.waverr.library.toggleFavorite(trackId)
         dispatch({ type: 'back' })
@@ -769,19 +865,19 @@ async function buildContextItems(
     })
   }
 
-  // Fila de una playlist en si misma (no una pista adentro): reproducir,
-  // renombrar y borrar.
+  // A row that is a playlist itself (not a track inside one): play, rename and
+  // delete.
   if (target.playlistId !== undefined && target.trackId === undefined) {
     const playlistId = target.playlistId
 
     items.push({
       key: 'play',
-      label: 'REPRODUCIR',
+      label: 'PLAY',
       activate: async () => {
         const entries = await window.waverr.library.listPlaylistTracks(playlistId)
         const playable = entries.filter((entry) => !entry.missing)
         dispatch({ type: 'back' })
-        // Playlist vacia o toda perdida: no hay donde arrancar.
+        // Empty playlist, or every track missing: nowhere to start.
         if (playable.length === 0) return
         dispatch({ type: 'openNowPlaying' })
         void audioEngine.playNow(playable, 0)
@@ -790,14 +886,14 @@ async function buildContextItems(
 
     items.push({
       key: 'rename',
-      label: 'RENOMBRAR',
+      label: 'RENAME',
       activate: () => {
         dispatch({ type: 'back' })
         dispatch({
           type: 'push',
           view: {
             kind: 'prompt',
-            label: 'NUEVO NOMBRE',
+            label: 'NEW NAME',
             value: '',
             intent: { kind: 'renamePlaylist', playlistId }
           }
@@ -806,7 +902,7 @@ async function buildContextItems(
     })
     items.push({
       key: 'delete',
-      label: 'BORRAR PLAYLIST',
+      label: 'DELETE PLAYLIST',
       activate: async () => {
         await window.waverr.library.deletePlaylist(playlistId)
         dispatch({ type: 'back' })
@@ -817,22 +913,22 @@ async function buildContextItems(
   if (target.origin === 'queue' || target.origin === 'playlist') {
     items.push({
       key: 'move',
-      label: 'MOVER',
+      label: 'MOVE',
       activate: () => {
-        // No hace falta un `setSelection` aca: `openContextMenu` ya dejo la
-        // seleccion de la vista de abajo en la fila que se toco (long-press o
-        // click derecho), y `back` no la toca. Reponerla con `target.index`
-        // seria ademas incorrecto para la cola cuando hay fila AHORA: ese
-        // indice es de dominio (posicion en la cola manual), no de fila, y
-        // ambos difieren en uno justo en ese caso.
+        // No `setSelection` is needed here: `openContextMenu` already left the
+        // selection of the view underneath on the row that was touched
+        // (long-press or right click), and `back` does not touch it. Restoring
+        // it with `target.index` would also be wrong for the queue when a NOW
+        // row is present: that index is a domain index (position in the manual
+        // queue), not a row index, and the two differ by one in exactly that
+        // case.
         //
-        // La identidad que se guarda para soltar despues (`originId`) es el
-        // itemId dentro de una playlist o el trackId dentro de la cola: lo
-        // que sigue identificando a esta fila si la lista se reconstruye
-        // mientras se esta arrastrando (por ejemplo, una pista que termina y
-        // corre los indices de la cola manual). `originOccurrence` (0 en
-        // playlist, donde itemId ya es unico) desempata si esa pista esta
-        // encolada mas de una vez.
+        // The identity stored for dropping later (`originId`) is the itemId
+        // inside a playlist or the trackId inside the queue: whatever keeps
+        // identifying this row if the list is rebuilt mid-drag (for example, a
+        // track ending and shifting the manual queue's row indices).
+        // `originOccurrence` (0 in a playlist, where itemId is already unique)
+        // breaks the tie when that track is queued more than once.
         const originId = target.origin === 'playlist' ? target.itemId : target.trackId
         if (originId === undefined) return
         dispatch({ type: 'back' })
@@ -842,14 +938,14 @@ async function buildContextItems(
 
     items.push({
       key: 'remove',
-      label: 'QUITAR',
+      label: 'REMOVE',
       activate: async () => {
         if (target.origin === 'queue') {
-          // No se usa `target.index`: si la pista actual termino con el menu
-          // ACCIONES abierto, ese indice quedo viejo y sacaria la fila
-          // equivocada (justo lo que la invariante de la cola prohibe: nada
-          // que el usuario encolo desaparece salvo que el lo saque). Se
-          // resuelve de nuevo por identidad, igual que MOVER.
+          // `target.index` is not used: if the current track ended while the
+          // ACTIONS menu was open, that index went stale and would remove the
+          // wrong row (exactly what the queue's invariant forbids: nothing the
+          // user queued disappears unless they remove it). It is resolved by
+          // identity again, same as MOVE.
           if (target.trackId !== undefined) {
             const rows = buildQueueRows(audioEngine.getQueueView())
             const manualIndex = resolveManualIndexById(rows, target.trackId, target.occurrence ?? 0)
@@ -873,20 +969,31 @@ function trackItem(
   return (track, index) => ({
     key: String(track.id),
     label: displayName(track),
-    meta: track.durationMs ? formatTime(track.durationMs) : track.ext.slice(1).toUpperCase(),
+    // The containing folder, not the duration: with one flat list covering the
+    // whole library, where a file came from is the thing you cannot infer.
+    // Duration still shows in the NOW PLAYING view.
+    meta: track.folder,
     trackId: track.id,
     favorite: track.favorite,
+    canHide: true,
     contextTarget: {
       label: displayName(track),
       index,
       origin: 'library',
       trackId: track.id
     },
+    // Starting a track leaves the list alone: picking one is not a reason to
+    // stop browsing, and jumping away meant going back every time to hear the
+    // next one. Picking the one already playing is the exception -- there is
+    // nothing to start, so it can only mean "take me to it".
+    //
+    // The visible list becomes the queue: that is how NEXT follows what is on
+    // screen.
     activate: () => {
-      // La pantalla cambia primero: cargar el audio puede tardar y la
-      // navegacion no tiene por que quedarse esperandolo.
-      dispatch({ type: 'openNowPlaying' })
-      // La lista visible se convierte en la cola: asi NEXT sigue lo que se ve.
+      if (audioEngine.getState().track?.id === track.id) {
+        dispatch({ type: 'openNowPlaying' })
+        return
+      }
       void audioEngine.playNow(tracks, index)
     }
   })
@@ -896,7 +1003,8 @@ function emptyItem(label: string): ScreenItem {
   return { key: 'empty', label, activate: () => {} }
 }
 
-/** Un export sin tags se muestra por su nombre de archivo, que es lo que el autor reconoce. */
+/** An export with no tags is shown by its filename, which is what its author
+ *  recognizes. */
 export function displayName(track: Track): string {
   return track.hasTags && track.title ? track.title : track.filename
 }

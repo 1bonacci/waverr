@@ -6,10 +6,10 @@ function makeTrack(id: number, missing = false): Track {
   return {
     id,
     rootId: 1,
-    path: `C:/musica/track_${id}.wav`,
+    path: `C:/music/track_${id}.wav`,
     filename: `track_${id}.wav`,
-    dir: 'C:/musica',
-    folder: 'musica',
+    dir: 'C:/music',
+    folder: 'music',
     ext: '.wav',
     size: 1000,
     mtime: 0,
@@ -22,6 +22,7 @@ function makeTrack(id: number, missing = false): Track {
     lastPlayedAt: null,
     playCount: 0,
     missing,
+    hidden: false,
     favorite: false
   }
 }
@@ -35,8 +36,8 @@ describe('QueuePersistence', () => {
     vi.useRealTimers()
   })
 
-  describe('debounce del guardado', () => {
-    it('agrupa varios cambios en una sola escritura', () => {
+  describe('save debounce', () => {
+    it('groups several changes into a single write', () => {
       const mockSetSetting = vi.fn()
       const persistence = new QueuePersistence('queue', 500, {
         getSetting: async () => null,
@@ -44,7 +45,7 @@ describe('QueuePersistence', () => {
         getTrack: async () => null
       })
 
-      // Programar tres guardados seguidos
+      // Schedule three saves in a row
       persistence.scheduleSave({ manualTracks: [makeTrack(1)], currentTrackId: null })
       persistence.scheduleSave({ manualTracks: [makeTrack(1), makeTrack(2)], currentTrackId: null })
       persistence.scheduleSave({
@@ -52,14 +53,14 @@ describe('QueuePersistence', () => {
         currentTrackId: null
       })
 
-      // Sin avanzar el tiempo, setSetting no se llama
+      // Without advancing time, setSetting is not called
       expect(mockSetSetting).not.toHaveBeenCalled()
 
-      // Avanzar 500ms activa el debounce
+      // Advancing 500ms fires the debounce
       vi.advanceTimersByTime(500)
       expect(mockSetSetting).toHaveBeenCalledOnce()
 
-      // Verificar que se guardo el ultimo estado
+      // Verify the last state was what got saved
       const call = mockSetSetting.mock.calls[0]?.[1]
       if (call) {
         const parsed = JSON.parse(call as string) as { manualTrackIds: number[] }
@@ -67,7 +68,7 @@ describe('QueuePersistence', () => {
       }
     })
 
-    it('reinicia el timer si hay cambios durante el debounce', () => {
+    it('restarts the timer if there are changes during the debounce', () => {
       const mockSetSetting = vi.fn()
       const persistence = new QueuePersistence('queue', 500, {
         getSetting: async () => null,
@@ -78,21 +79,21 @@ describe('QueuePersistence', () => {
       persistence.scheduleSave({ manualTracks: [makeTrack(1)], currentTrackId: null })
       vi.advanceTimersByTime(300)
 
-      // Antes de 500ms, otro cambio reinicia el timer
+      // Before 500ms, another change restarts the timer
       persistence.scheduleSave({ manualTracks: [makeTrack(1), makeTrack(2)], currentTrackId: null })
       vi.advanceTimersByTime(100)
 
-      // Todavia no se escribio
+      // Still not written
       expect(mockSetSetting).not.toHaveBeenCalled()
 
-      // Completar los 500ms del segundo cambio
+      // Complete the 500ms of the second change
       vi.advanceTimersByTime(400)
       expect(mockSetSetting).toHaveBeenCalledOnce()
     })
   })
 
-  describe('restauracion', () => {
-    it('recupera la cola manual guardada', async () => {
+  describe('restoring', () => {
+    it('recovers the saved manual queue', async () => {
       const payload = JSON.stringify({
         manualTrackIds: [1, 2, 3],
         currentTrackId: null
@@ -110,7 +111,7 @@ describe('QueuePersistence', () => {
       expect(result?.manualTracks.map((t) => t.id)).toEqual([1, 2, 3])
     })
 
-    it('descarta ids inexistentes en silencio', async () => {
+    it('silently discards ids that do not exist', async () => {
       const payload = JSON.stringify({
         manualTrackIds: [1, 999, 2],
         currentTrackId: null
@@ -127,7 +128,7 @@ describe('QueuePersistence', () => {
       expect(result?.manualTracks.map((t) => t.id)).toEqual([1, 2])
     })
 
-    it('descarta tracks marcados como missing', async () => {
+    it('discards tracks marked as missing', async () => {
       const payload = JSON.stringify({
         manualTrackIds: [1, 2, 3],
         currentTrackId: null
@@ -144,7 +145,7 @@ describe('QueuePersistence', () => {
       expect(result?.manualTracks.map((t) => t.id)).toEqual([1, 3])
     })
 
-    it('no rompe con JSON corrupto', async () => {
+    it('does not break on corrupt JSON', async () => {
       const persistence = new QueuePersistence('queue', 500, {
         getSetting: async () => '{ invalid json }',
         setSetting: async () => undefined,
@@ -155,7 +156,7 @@ describe('QueuePersistence', () => {
       expect(result).toBeNull()
     })
 
-    it('es idempotente', async () => {
+    it('is idempotent', async () => {
       const mockGetSetting = vi.fn(async () =>
         JSON.stringify({
           manualTrackIds: [1],
@@ -172,11 +173,11 @@ describe('QueuePersistence', () => {
       await persistence.restore()
       await persistence.restore()
 
-      // getSetting se llamaria dos veces sin el flag
+      // Without the flag, getSetting would be called twice
       expect(mockGetSetting).toHaveBeenCalledTimes(1)
     })
 
-    it('una mutacion durante Promise.all gana sobre lo restaurado', async () => {
+    it('a mutation during Promise.all wins over the restored state', async () => {
       const payload = JSON.stringify({
         manualTrackIds: [1, 2, 3],
         currentTrackId: null
@@ -185,7 +186,7 @@ describe('QueuePersistence', () => {
       let callCount = 0
       const mockGetTrack = vi.fn(async (id: number) => {
         callCount++
-        // En la segunda llamada a getTrack, simular que la cola fue mutada
+        // On the second call to getTrack, simulate the queue having been mutated
         if (callCount === 2) {
           persistence.recordMutation()
         }
@@ -199,11 +200,11 @@ describe('QueuePersistence', () => {
       })
 
       const result = await persistence.restore()
-      // La restauracion no se aplico: la mutacion gano
+      // The restore was not applied: the mutation won
       expect(result).toBeNull()
     })
 
-    it('una mutacion durante getSetting gana sobre lo restaurado', async () => {
+    it('a mutation during getSetting wins over the restored state', async () => {
       const payload = JSON.stringify({
         manualTrackIds: [1, 2],
         currentTrackId: null
@@ -211,7 +212,7 @@ describe('QueuePersistence', () => {
 
       const persistence = new QueuePersistence('queue', 500, {
         getSetting: async () => {
-          // Simular que el usuario encola algo mientras getSetting esta en vuelo
+          // Simulates the user queueing something while getSetting is in flight
           persistence.recordMutation()
           return payload
         },
@@ -220,11 +221,11 @@ describe('QueuePersistence', () => {
       })
 
       const result = await persistence.restore()
-      // La restauracion no se aplico: la mutacion durante getSetting gano
+      // The restore was not applied: the mutation during getSetting won
       expect(result).toBeNull()
     })
 
-    it('si restore() falla, puede reintentar con la misma instancia', async () => {
+    it('if restore() fails, it can be retried with the same instance', async () => {
       const payload = JSON.stringify({
         manualTrackIds: [1, 2],
         currentTrackId: null
@@ -240,20 +241,20 @@ describe('QueuePersistence', () => {
         }
       })
 
-      // Primer intento falla
+      // First attempt fails
       const result1 = await persistence.restore()
       expect(result1).toBeNull()
 
-      // Cambiar para que no falle
+      // Make it stop failing
       shouldFail = false
 
-      // Segundo intento debe poder restaurar
+      // Second attempt should be able to restore
       const result2 = await persistence.restore()
       expect(result2).not.toBeNull()
       expect(result2?.manualTracks.map((t) => t.id)).toEqual([1, 2])
     })
 
-    it('no reprograma el guardado al restaurar', async () => {
+    it('does not reschedule the save while restoring', async () => {
       const mockSetSetting = vi.fn()
       const payload = JSON.stringify({
         manualTrackIds: [1],
@@ -268,14 +269,14 @@ describe('QueuePersistence', () => {
 
       await persistence.restore()
 
-      // El timer de guardado no debe estar activo
+      // No save timer should be active
       vi.advanceTimersByTime(500)
       expect(mockSetSetting).not.toHaveBeenCalled()
     })
   })
 
-  describe('flush al descargar', () => {
-    it('escribe lo pendiente cuando se pide flush', () => {
+  describe('flush on unload', () => {
+    it('writes the pending save when flush is requested', () => {
       const mockSetSetting = vi.fn()
       const persistence = new QueuePersistence('queue', 500, {
         getSetting: async () => null,
@@ -285,20 +286,20 @@ describe('QueuePersistence', () => {
 
       persistence.scheduleSave({ manualTracks: [makeTrack(1)], currentTrackId: null })
 
-      // Antes de 500ms hay un timer pendiente
+      // Before 500ms there is a pending timer
       vi.advanceTimersByTime(100)
       expect(mockSetSetting).not.toHaveBeenCalled()
 
-      // Flush escribe inmediatamente
+      // Flush writes immediately
       persistence.flushPendingSave({ manualTracks: [makeTrack(1)], currentTrackId: null })
       expect(mockSetSetting).toHaveBeenCalledOnce()
 
-      // El timer no se llama una segunda vez
+      // The timer is not called a second time
       vi.advanceTimersByTime(500)
       expect(mockSetSetting).toHaveBeenCalledOnce()
     })
 
-    it('no hace nada si no hay timer pendiente', () => {
+    it('does nothing if there is no pending timer', () => {
       const mockSetSetting = vi.fn()
       const persistence = new QueuePersistence('queue', 500, {
         getSetting: async () => null,

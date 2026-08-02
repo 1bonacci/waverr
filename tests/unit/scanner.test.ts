@@ -17,27 +17,27 @@ async function makeRoot(files: string[]): Promise<string> {
 }
 
 describe('isAudioFile', () => {
-  it('acepta las extensiones de la lista sin importar mayusculas', () => {
+  it('accepts the listed extensions regardless of case', () => {
     expect(isAudioFile('beat.WAV')).toBe(true)
     expect(isAudioFile('idea.flac')).toBe(true)
     expect(isAudioFile('take.aiff')).toBe(true)
   })
 
-  it('rechaza lo que no es audio', () => {
-    expect(isAudioFile('proyecto.als')).toBe(false)
-    expect(isAudioFile('tapa.jpg')).toBe(false)
-    expect(isAudioFile('sin-extension')).toBe(false)
+  it('rejects anything that is not audio', () => {
+    expect(isAudioFile('project.als')).toBe(false)
+    expect(isAudioFile('cover.jpg')).toBe(false)
+    expect(isAudioFile('no-extension')).toBe(false)
   })
 })
 
 describe('walkAudioFiles', () => {
-  it('encuentra audio en subcarpetas y descarta el resto', async () => {
+  it('finds audio in subfolders and drops the rest', async () => {
     const root = await makeRoot([
       'beats/beat_v3.wav',
       'beats/render/beat_v3_master.wav',
       'demos/idea_140bpm.wav',
-      'demos/proyecto.als',
-      'tapa.jpg'
+      'demos/project.als',
+      'cover.jpg'
     ])
 
     const found = []
@@ -50,7 +50,7 @@ describe('walkAudioFiles', () => {
     ])
   })
 
-  it('completa dir y folder de cada archivo', async () => {
+  it('fills in dir and folder for every file', async () => {
     const root = await makeRoot(['beats/trap/beat_v3.wav'])
 
     const found = []
@@ -64,11 +64,11 @@ describe('walkAudioFiles', () => {
     expect(file.size).toBeGreaterThan(44)
   })
 
-  it('saltea carpetas ocultas y basura del sistema', async () => {
+  it('skips hidden folders and system clutter', async () => {
     const root = await makeRoot([
       'ok.wav',
-      '.cache/oculto.wav',
-      'node_modules/paquete/ruido.wav'
+      '.cache/hidden.wav',
+      'node_modules/package/noise.wav'
     ])
 
     const found = []
@@ -77,9 +77,9 @@ describe('walkAudioFiles', () => {
     expect(found.map((file) => file.filename)).toEqual(['ok.wav'])
   })
 
-  it('no explota con una raiz inexistente', async () => {
+  it('does not blow up on a nonexistent root', async () => {
     const found = []
-    for await (const file of walkAudioFiles('C:/ruta/que/no/existe/waverr')) found.push(file)
+    for await (const file of walkAudioFiles('C:/path/that/does/not/exist/waverr')) found.push(file)
     expect(found).toEqual([])
   })
 })

@@ -8,24 +8,24 @@ interface ListViewProps {
 }
 
 /**
- * Lista generica de la pantalla. Sirve para menus, carpetas, resultados de
- * busqueda y ajustes: todos llegan aca como `ScreenItem[]`.
+ * The screen's generic list. Used for menus, tracks, search results and
+ * settings alike: they all arrive here as `ScreenItem[]`.
  */
 export function ListView({ controller }: ListViewProps): JSX.Element {
   const { items, selected, loading, view } = controller
   const selectedRef = useRef<HTMLButtonElement>(null)
 
-  // La fila agarrada en modo mover, si la hay: solo existe en COLA y PLAYLIST.
+  // The row held in move mode, if any: only exists in QUEUE and PLAYLIST.
   const movingTo =
     (view.kind === 'queue' || view.kind === 'playlist') && view.moving ? view.moving.to : null
 
-  // La fila seleccionada se mantiene visible cuando se navega con el teclado.
+  // Keeps the selected row visible while navigating with the keyboard.
   useEffect(() => {
     selectedRef.current?.scrollIntoView({ block: 'nearest' })
   }, [selected, items])
 
   if (items.length === 0) {
-    return <div className={styles.empty}>{loading ? 'CARGANDO...' : 'VACIO'}</div>
+    return <div className={styles.empty}>{loading ? 'LOADING...' : 'EMPTY'}</div>
   }
 
   return (
@@ -35,14 +35,51 @@ export function ListView({ controller }: ListViewProps): JSX.Element {
           {item.sectionHeader && (
             <div className={styles.sectionHeader}>{item.sectionHeader}</div>
           )}
-          <Row
-            item={item}
-            index={index}
-            selected={index === selected}
-            moving={index === movingTo}
-            controller={controller}
-            rowRef={index === selected ? selectedRef : undefined}
-          />
+          <div className={styles.rowWrap} data-testid="screen-row-wrap">
+            <Row
+              item={item}
+              index={index}
+              selected={index === selected}
+              moving={index === movingTo}
+              controller={controller}
+              rowRef={index === selected ? selectedRef : undefined}
+            />
+            {item.canHide && item.trackId !== undefined && (
+              <button
+                type="button"
+                className={styles.trash}
+                title={`Hide ${item.label}`}
+                aria-label={`Hide ${item.label}`}
+                data-testid="row-trash"
+                // Pointer events, not just click: the row listens on
+                // pointerdown/up for its long press, and those fire first.
+                // Without stopping them here, hiding a track would also select
+                // and play it.
+                onPointerDown={(event) => event.stopPropagation()}
+                onPointerUp={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  controller.hideTrack(item.trackId!, item.label)
+                }}
+              >
+                {/* Drawn rather than typed: the LCD font is monospace and has
+                    no glyph for the trash emoji, which rendered as a blank
+                    box. `currentColor` keeps it in step with the row. */}
+                <svg
+                  viewBox="0 0 14 14"
+                  width="11"
+                  height="11"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.3"
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                >
+                  <path d="M2.5 3.5h9M5.5 3.5V2.2h3v1.3M3.6 3.5l.6 8.3h5.6l.6-8.3M6 6v3.6M8 6v3.6" />
+                </svg>
+              </button>
+            )}
+          </div>
         </Fragment>
       ))}
     </div>
@@ -64,10 +101,10 @@ function Row({
   controller: ScreenController
   rowRef?: RefObject<HTMLButtonElement | null>
 }): JSX.Element {
-  // Con una fila agarrada en modo mover, clickear cualquier fila la suelta
-  // ahi en vez de activarla: activar una fila de la cola manual mientras se
-  // esta moviendo corria (y mutilaba) la cola, porque `item.activate()` no
-  // sabe nada de que hay un arrastre en curso.
+  // With a row held in move mode, clicking any row drops it there instead of
+  // activating it: activating a manual queue row mid-move used to shift (and
+  // mangle) the queue, because `item.activate()` knows nothing about a drag
+  // being in progress.
   const { view } = controller
   const isMoving = (view.kind === 'queue' || view.kind === 'playlist') && view.moving !== null
 

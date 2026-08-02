@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 /**
- * Genera un WAV PCM valido y diminuto. Sirve para que el escaneo y
- * `music-metadata` tengan archivos reales que leer sin meter binarios al repo.
+ * Generates a tiny, valid PCM WAV. Gives the scanner and `music-metadata` real
+ * files to read without putting binaries in the repo.
  */
 export function makeWavBuffer(durationSeconds = 0.05, sampleRate = 8000): Buffer {
   const channels = 1
@@ -17,8 +17,8 @@ export function makeWavBuffer(durationSeconds = 0.05, sampleRate = 8000): Buffer
   buffer.writeUInt32LE(36 + dataSize, 4)
   buffer.write('WAVE', 8, 'ascii')
   buffer.write('fmt ', 12, 'ascii')
-  buffer.writeUInt32LE(16, 16) // tamanio del chunk fmt
-  buffer.writeUInt16LE(1, 20) // formato PCM
+  buffer.writeUInt32LE(16, 16) // size of the fmt chunk
+  buffer.writeUInt16LE(1, 20) // PCM format
   buffer.writeUInt16LE(channels, 22)
   buffer.writeUInt32LE(sampleRate, 24)
   buffer.writeUInt32LE(sampleRate * channels * (bitsPerSample / 8), 28)
@@ -27,7 +27,7 @@ export function makeWavBuffer(durationSeconds = 0.05, sampleRate = 8000): Buffer
   buffer.write('data', 36, 'ascii')
   buffer.writeUInt32LE(dataSize, 40)
 
-  // Una onda senoidal simple: audio real, no silencio.
+  // A simple sine wave: real audio, not silence.
   for (let frame = 0; frame < frameCount; frame++) {
     const sample = Math.round(Math.sin((frame / sampleRate) * 2 * Math.PI * 440) * 12000)
     buffer.writeInt16LE(sample, 44 + frame * 2)
@@ -37,9 +37,8 @@ export function makeWavBuffer(durationSeconds = 0.05, sampleRate = 8000): Buffer
 }
 
 /**
- * @param durationSeconds duracion de cada archivo. Los tests unitarios usan el
- *   default minimo; los de reproduccion necesitan algo que suene lo suficiente
- *   como para poder observarlo.
+ * @param durationSeconds duration of each file. Unit tests use the minimum
+ *   default; playback tests need something long enough to be observed playing.
  */
 export async function createTempLibrary(
   files: string[],

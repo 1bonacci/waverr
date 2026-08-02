@@ -2,7 +2,7 @@ import { BrowserWindow, dialog, ipcMain } from 'electron'
 import { IPC, type ScanProgress, type TrackQuery } from '../shared/types'
 import type { Library } from './library/index'
 
-/** Minimo entre avisos de progreso. Sin esto el escaneo inunda el IPC. */
+/** Minimum gap between progress notices. Without it the scan floods the IPC. */
 const PROGRESS_THROTTLE_MS = 120
 
 export function registerWindowIpc(): void {
@@ -29,7 +29,7 @@ export function registerLibraryIpc(library: Library, getWindow: () => BrowserWin
     const window = getWindow()
     const result = window
       ? await dialog.showOpenDialog(window, {
-          title: 'Elegir carpeta de musica',
+          title: 'Choose a music folder',
           properties: ['openDirectory']
         })
       : await dialog.showOpenDialog({ properties: ['openDirectory'] })
@@ -56,11 +56,13 @@ export function registerLibraryIpc(library: Library, getWindow: () => BrowserWin
 
   ipcMain.handle(IPC.librarySearch, (_event, query: TrackQuery) => library.search(query))
   ipcMain.handle(IPC.libraryListTracks, (_event, query: TrackQuery) => library.search(query))
-  ipcMain.handle(IPC.libraryListFolders, () => library.listFolders())
   ipcMain.handle(IPC.libraryGetTrack, (_event, trackId: number) => library.getTrack(trackId))
   ipcMain.handle(IPC.libraryStats, () => library.stats())
   ipcMain.handle(IPC.libraryToggleFavorite, (_event, trackId: number) =>
     library.toggleFavorite(trackId)
+  )
+  ipcMain.handle(IPC.librarySetTrackHidden, (_event, trackId: number, hidden: boolean) =>
+    library.setTrackHidden(trackId, hidden)
   )
 
   ipcMain.handle(IPC.libraryListPlaylists, () => library.listPlaylists())
@@ -91,8 +93,8 @@ export function registerLibraryIpc(library: Library, getWindow: () => BrowserWin
 }
 
 /**
- * Escaneo disparado por el usuario: no se espera el resultado para responder el
- * IPC, porque la pantalla ya muestra el progreso mientras corre.
+ * A scan triggered by the user: the IPC reply does not wait for the result,
+ * because the screen already shows the progress while it runs.
  */
 export async function scanInBackground(
   library: Library,
@@ -101,7 +103,7 @@ export async function scanInBackground(
   try {
     await library.scanAll(onProgress)
   } catch (error) {
-    console.error('[waverr] fallo el escaneo:', error)
+    console.error('[waverr] scan failed:', error)
   }
 }
 
@@ -109,7 +111,7 @@ function throttle<T>(fn: (value: T) => void, waitMs: number): (value: T) => void
   let lastRun = 0
   return (value: T) => {
     const now = Date.now()
-    // Las fases terminales siempre pasan: son las que apagan el cartel.
+    // Terminal phases always get through: they are what clears the notice.
     const isTerminal = typeof value === 'object' && value !== null && 'phase' in value
       ? (value as { phase: string }).phase === 'done'
       : false

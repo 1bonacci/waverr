@@ -12,8 +12,9 @@ export interface QueuePersistenceCallbacks {
 }
 
 /**
- * Encapsula la logica de persistencia de la cola manual.
- * Independiente de AudioEngine para poder testear sin dependencias del DOM.
+ * Wraps the persistence logic for the manual queue.
+ *
+ * Kept separate from AudioEngine so it can be tested with no DOM dependencies.
  */
 export class QueuePersistence {
   private readonly key: string
@@ -41,9 +42,9 @@ export class QueuePersistence {
   scheduleSave(state: QueuePersistenceState): void {
     if (this.saveTimer !== null) clearTimeout(this.saveTimer)
     this.saveTimer = setTimeout(() => {
-      // Limpiar antes de guardar: si no, `flushPendingSave` (disparado por
-      // `pagehide` justo cuando este timeout ya corrio) ve un timer que cree
-      // pendiente y reescribe un payload que ya se persistio.
+      // Cleared before saving: otherwise `flushPendingSave` (fired by
+      // `pagehide` just as this timeout has already run) sees a timer it
+      // believes is pending and rewrites a payload that was already persisted.
       this.saveTimer = null
       const payload = JSON.stringify({
         manualTrackIds: state.manualTracks.map((t) => t.id),
@@ -60,8 +61,8 @@ export class QueuePersistence {
   async restore(): Promise<QueuePersistenceState | null> {
     if (this.restored) return null
 
-    // Capturar el contador COMO PRIMERA COSA, antes de cualquier await.
-    // Asi detecta mutaciones incluso durante getSetting.
+    // Capture the counter AS THE VERY FIRST THING, before any await, so that
+    // mutations during getSetting are detected too.
     const mutationCountAtStart = this.mutationCount
 
     try {
@@ -81,7 +82,7 @@ export class QueuePersistence {
         ? parsed.manualTrackIds.filter((id): id is number => typeof id === 'number')
         : []
 
-      // Paralelo: reduce la ventana donde puede ocurrir una mutacion.
+      // In parallel: narrows the window in which a mutation can happen.
       const fetchedTracks = await Promise.all(
         ids.map((id) => this.callbacks.getTrack(id))
       )
@@ -91,12 +92,12 @@ export class QueuePersistence {
         if (track && !track.missing) tracks.push(track)
       }
 
-      // Si la cola fue mutada mientras restaurabamos, el usuario gano: descartar.
+      // If the queue was mutated while restoring, the user wins: discard.
       if (this.mutationCount !== mutationCountAtStart) {
         return null
       }
 
-      // Chequear el tipo primero para evitar tratar 0 como falsy.
+      // Check the type first, so a legitimate 0 is not treated as falsy.
       const currentTrackId = typeof parsed.currentTrackId === 'number'
         ? parsed.currentTrackId
         : null
@@ -106,9 +107,9 @@ export class QueuePersistence {
         currentTrackId
       }
     } catch (error) {
-      // Capturar excepciones para no propagar hacia void audioEngine.restore().
-      // No romper el arranque; registrar y permitir reintentos.
-      console.error('QueuePersistence.restore() fallo:', error)
+      // Caught so nothing propagates out of `void audioEngine.restore()`.
+      // Startup must not break; log it and allow a retry.
+      console.error('QueuePersistence.restore() failed:', error)
       this.restored = false
       return null
     }
@@ -124,7 +125,7 @@ export class QueuePersistence {
       manualTrackIds: state.manualTracks.map((t) => t.id),
       currentTrackId: state.currentTrackId
     })
-    // Best-effort: IPC es asincronico, sin garantia de que complete al cerrar.
+    // Best effort: IPC is asynchronous, with no guarantee it completes on close.
     void this.callbacks.setSetting(this.key, payload)
   }
 

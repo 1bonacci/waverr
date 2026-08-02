@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { audioEngine, type PlaybackState } from './AudioEngine'
 
-/** Estado de reproduccion, siempre sincronizado con el motor. */
+/** Playback state, always in sync with the engine. */
 export function usePlayback(): PlaybackState {
   return useSyncExternalStore(audioEngine.subscribe, audioEngine.getState, audioEngine.getState)
 }

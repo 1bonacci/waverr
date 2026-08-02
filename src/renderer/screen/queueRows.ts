@@ -1,23 +1,23 @@
 /**
- * Aplanado de la vista COLA y conversion de indices.
+ * Flattening of the QUEUE view, and index conversion.
  *
- * `audioEngine.getQueueView()` separa AHORA, MANUAL y LUEGO, pero la lista que
- * se dibuja los mezcla en una sola columna. La fila que el usuario ve y toca
- * no es el mismo indice que espera `moveInQueue`/`removeFromQueue` (esos
- * esperan un indice dentro de la cola manual nada mas). En vez de reconstruir
- * esa conversion con una resta de offset en cada lugar que la necesita (facil
- * de desalinear si cambia el orden de las secciones), cada fila de este
- * modulo lleva su propio indice de dominio ademas de su posicion en la lista.
- * Asi el llamador nunca calcula un offset a mano: solo mira de que fila se
- * trata y usa el indice que ya viene adentro.
+ * `audioEngine.getQueueView()` keeps NOW, MANUAL and LATER apart, but the list
+ * that gets drawn mixes them into a single column. The row the user sees and
+ * touches is not the same index `moveInQueue`/`removeFromQueue` expect (those
+ * want an index inside the manual queue only). Rather than rebuilding that
+ * conversion by subtracting an offset everywhere it is needed -- easy to get out
+ * of step if the section order ever changes -- every row from this module
+ * carries its own domain index alongside its position in the list. The caller
+ * then never computes an offset by hand: it looks at which row it has and uses
+ * the index already inside it.
  *
- * Modulo puro a proposito, igual que `playbackQueue.ts` y `viewStack.ts`: se
- * puede probar entero sin `AudioEngine` ni el DOM.
+ * Deliberately a pure module, like `playbackQueue.ts` and `viewStack.ts`: it can
+ * be tested in full without `AudioEngine` or the DOM.
  */
 
 import type { Track } from '@shared/types'
 
-/** Lo minimo que hace falta de `QueueView` para aplanarla. */
+/** The minimum of `QueueView` needed to flatten it. */
 export interface FlatQueueSource {
   now: Track | null
   manual: Track[]
@@ -26,14 +26,14 @@ export interface FlatQueueSource {
 
 export type QueueRow =
   | { section: 'now'; track: Track }
-  /** `manualIndex` es la posicion dentro de `QueueView.manual`: el indice que
-   *  entienden `moveInQueue` y `removeFromQueue`. */
+  /** `manualIndex` is the position within `QueueView.manual`: the index that
+   *  `moveInQueue` and `removeFromQueue` understand. */
   | { section: 'manual'; track: Track; manualIndex: number }
-  /** `upcomingIndex` es la posicion dentro de `QueueView.upcoming`, para armar
-   *  el contexto al saltar directo a una pista de LUEGO. */
+  /** `upcomingIndex` is the position within `QueueView.upcoming`, used to build
+   *  the context when jumping straight to a LATER track. */
   | { section: 'upcoming'; track: Track; upcomingIndex: number }
 
-/** Aplana AHORA + MANUAL + LUEGO en el orden en que se dibujan. */
+/** Flattens NOW + MANUAL + LATER in the order they are drawn. */
 export function buildQueueRows(view: FlatQueueSource): QueueRow[] {
   const rows: QueueRow[] = []
 
@@ -46,19 +46,19 @@ export function buildQueueRows(view: FlatQueueSource): QueueRow[] {
   return rows
 }
 
-/** Solo las filas de la cola manual se pueden reordenar: AHORA y LUEGO no. */
+/** Only manual queue rows can be reordered: NOW and LATER cannot. */
 export function isMovableRow(row: QueueRow): row is Extract<QueueRow, { section: 'manual' }> {
   return row.section === 'manual'
 }
 
 /**
- * Traduce la fila donde termino un arrastre (posicion en la lista completa)
- * al indice dentro de la cola manual que espera `moveInQueue`.
+ * Translates the row a drag ended on (a position in the full list) into the
+ * index inside the manual queue that `moveInQueue` expects.
  *
- * Soltar sobre la fila AHORA equivale a la punta de la cola manual (indice
- * 0); soltar sobre una fila de LUEGO, o mas alla del final de la lista,
- * equivale a la cola de la cola manual (`moveInQueue` satura ese indice al
- * ultimo valido, asi que no hace falta clampear aca).
+ * Dropping on the NOW row means the head of the manual queue (index 0);
+ * dropping on a LATER row, or past the end of the list, means the tail of the
+ * manual queue (`moveInQueue` saturates that index to the last valid one, so
+ * there is no need to clamp here).
  */
 export function manualIndexForDrop(rows: QueueRow[], rowIndex: number): number {
   const row = rows[rowIndex]
@@ -69,15 +69,15 @@ export function manualIndexForDrop(rows: QueueRow[], rowIndex: number): number {
 }
 
 /**
- * Ordinal (0 = primera copia) de la fila en `manualIndex` entre las entradas
- * de la cola manual que comparten su trackId.
+ * Ordinal (0 = first copy) of the row at `manualIndex` among the manual queue
+ * entries that share its trackId.
  *
- * Encolar la misma pista mas de una vez esta permitido a proposito (`enqueue`
- * no deduplica), asi que el trackId solo no alcanza para identificar una fila
- * de forma unica. Este ordinal se calcula en el momento en que la fila esta a
- * la vista (recien armada, con un `manualIndex` todavia confiable) para poder
- * volver a encontrarla despues con `resolveManualIndexById`, aunque la lista
- * se haya reconstruido mientras tanto.
+ * Queueing the same track more than once is allowed on purpose (`enqueue` does
+ * not deduplicate), so the trackId alone is not enough to identify a row
+ * uniquely. This ordinal is computed while the row is on screen (freshly built,
+ * with a `manualIndex` that is still trustworthy) so the row can be found again
+ * later with `resolveManualIndexById`, even if the list was rebuilt in the
+ * meantime.
  */
 export function occurrenceInManual(rows: QueueRow[], manualIndex: number): number {
   const manualRows = rows.filter(isMovableRow)
@@ -87,24 +87,22 @@ export function occurrenceInManual(rows: QueueRow[], manualIndex: number): numbe
 }
 
 /**
- * Encuentra, por identidad, el indice dentro de la cola manual de la pista
- * `trackId`.
+ * Finds, by identity, the index within the manual queue of track `trackId`.
  *
- * Se usa para resolver el origen de un arrastre (o de un QUITAR) cuando la
- * lista se reconstruyo mientras se sostenia una fila: si una pista termina
- * durante el movimiento, se consume el primer elemento de la cola manual y
- * todos los indices de fila corren. El indice de fila que se guardo al
- * agarrar la fila deja de servir, pero la identidad de la pista agarrada
- * sigue siendo valida.
+ * Used to resolve the origin of a drag (or of a REMOVE) when the list was
+ * rebuilt while a row was being held: if a track ends mid-move, the first
+ * element of the manual queue is consumed and every row index shifts. The row
+ * index captured when the row was grabbed stops being valid, but the identity
+ * of the grabbed track still is.
  *
- * `occurrence` desempata cuando esa pista esta encolada mas de una vez: es el
- * ordinal calculado con `occurrenceInManual` en el momento en que se agarro
- * la fila. Si para entonces ya no quedan tantas copias (alguna anterior se
- * consumio sola mientras tanto), se cae a la ultima copia que quede en vez de
- * resolver a la primera por default.
+ * `occurrence` breaks the tie when that track is queued more than once: it is
+ * the ordinal computed by `occurrenceInManual` at the moment the row was
+ * grabbed. If by now there are fewer copies than that (an earlier one was
+ * consumed on its own in the meantime), it falls back to the last remaining
+ * copy rather than defaulting to the first.
  *
- * Devuelve null si esa pista ya no esta en la cola manual (se consumio sola
- * mientras se arrastraba).
+ * Returns null if that track is no longer in the manual queue (it was consumed
+ * on its own while being dragged).
  */
 export function resolveManualIndexById(
   rows: QueueRow[],

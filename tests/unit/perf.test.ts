@@ -7,11 +7,11 @@ import { scanRoot } from '../../src/main/library/scanner'
 import { makeWavBuffer } from './helpers/audio-fixtures'
 
 /**
- * Objetivo declarado en el plan: 5.000 archivos indexados y busqueda por debajo
- * de 50 ms. Este test es la red que avisa si el indice deja de cumplirlo.
+ * Target stated in the plan: 5,000 files indexed and search under 50 ms. This
+ * test is the safety net that flags it if the index stops meeting that.
  *
- * Solo corre la primera pasada del escaneo (rutas, tamanio, fecha): la lectura
- * de tags es I/O de archivo y se mide aparte.
+ * Only runs the first scan pass (paths, size, date): tag reading is file I/O
+ * and is measured separately.
  */
 const FILE_COUNT = 5000
 const SEARCH_BUDGET_MS = 50
@@ -43,8 +43,8 @@ async function buildBigLibrary(): Promise<string> {
   return base
 }
 
-describe('performance del indice', () => {
-  it(`indexa ${FILE_COUNT} archivos y busca en menos de ${SEARCH_BUDGET_MS} ms`, async () => {
+describe('index performance', () => {
+  it(`indexes ${FILE_COUNT} files and searches in under ${SEARCH_BUDGET_MS} ms`, async () => {
     root = await buildBigLibrary()
 
     const db = openDatabase(':memory:')
@@ -82,7 +82,7 @@ describe('performance del indice', () => {
 
     const slowest = Math.max(...timings)
     console.log(
-      `escaneo de ${FILE_COUNT} archivos: ${scanMs} ms | busqueda mas lenta: ${slowest.toFixed(1)} ms`
+      `scan of ${FILE_COUNT} files: ${scanMs} ms | slowest search: ${slowest.toFixed(1)} ms`
     )
 
     db.close()

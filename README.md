@@ -1,120 +1,130 @@
 # waverr
 
-Reproductor de audio local con interfaz de MP3 clasico, pensado para gente que
-produce su propia musica.
+A local audio player with the interface of a classic MP3 player, built for
+people who produce their own music.
 
-Los reproductores comunes asumen una biblioteca con tags ID3 limpios. Un
-productor tiene `beat_v3.wav`, `demo_final_FINAL.wav` e `idea_140bpm.wav`
-repartidos en decenas de carpetas de proyecto y casi siempre sin metadata.
-waverr indexa esas carpetas, busca por cualquier fragmento del nombre o de la
-ruta, y reproduce con un aparato dibujado en pantalla: LCD, rueda de control y
-visualizador.
+Ordinary players assume a library with clean ID3 tags. A producer has
+`beat_v3.wav`, `demo_final_FINAL.wav` and `idea_140bpm.wav` scattered across
+dozens of project folders, almost always with no metadata at all. waverr indexes
+those folders, searches by any fragment of the filename or path, and plays
+through a device drawn on screen: an LCD, a click wheel and a visualizer.
 
-## Uso
+## Usage
 
-Todo pasa dentro de la pantalla del aparato. Se maneja entero con el teclado o
-entero con el mouse.
+Everything happens inside the device's screen. It can be driven entirely with
+the keyboard or entirely with the mouse.
 
-| Tecla | Accion |
+| Key | Action |
 |---|---|
-| `↑` `↓` | mover la seleccion (o scroll del mouse sobre la rueda) |
-| `Enter` | entrar / reproducir (confirma el texto en el prompt) |
-| `Enter` mantenido | menu contextual sobre la fila (o click derecho con el mouse) |
-| `Esc` | atras (cancela el modo mover si hay una fila agarrada) |
-| `Backspace` | borrar letra en la busqueda o en el prompt de texto; atras en el resto |
-| `Espacio` | reproducir / pausar (en el prompt de texto, escribe un espacio) |
-| `←` `→` | pista anterior / siguiente (mantener: rebobinar 5 s) |
-| letras y numeros | abre la busqueda y filtra en vivo (en el prompt de texto, escriben el nombre) |
-| `F` | marcar favorito |
-| `V` | cambiar modo de visualizador |
-| `Home` | volver al menu raiz |
+| `↑` `↓` | move the selection (or scroll the mouse over the wheel) |
+| `Enter` | open / play (confirms the text in a prompt) |
+| `Enter` held | context menu for the row (or right click with the mouse) |
+| `Esc` | back (cancels move mode when a row is held) |
+| `Backspace` | delete a letter in search or in a text prompt; back elsewhere |
+| `Space` | play / pause (types a space inside a text prompt) |
+| `←` `→` | previous / next track (hold: seek 5 s) |
+| letters and digits | open search and filter live (type the name inside a prompt) |
+| `F` | toggle favorite |
+| `V` | change visualizer mode |
+| `Home` | back to the root menu |
 
-Para cargar musica: `AJUSTES` -> `+ AGREGAR CARPETA`. Se puede agregar mas de
-una raiz. El escaneo corre en dos pasadas: primero rutas (la busqueda ya
-funciona a los pocos segundos) y despues tags y duracion.
+To load music: `SETTINGS` -> `+ ADD FOLDER`. You can add more than one root. The
+scan runs in two passes: paths first (search works within seconds), then tags
+and duration.
 
-Un archivo que desaparece del disco no se borra del indice: queda marcado como
-perdido y conserva sus favoritos por si el disco externo vuelve a montarse.
+**There is no folder browsing.** `ALL TRACKS` is every audio file in one flat
+list, sorted by folder and A-Z inside each folder, with the folder name shown on
+every row. Files from the same session stay together, but you never have to
+enter folder after folder to reach one — and skipping forward walks the whole
+library instead of stopping when a folder runs out.
 
-El menu contextual (OK mantenido o click derecho) ofrece `REPRODUCIR AHORA`,
-`ENCOLAR SIGUIENTE`, `ENCOLAR AL FINAL`, `AGREGAR A PLAYLIST` y `FAVORITO`
-sobre cualquier pista; dentro de la `COLA` o de una playlist suma `MOVER` y
-`QUITAR`. Al elegir `MOVER` la fila queda agarrada: las flechas la arrastran,
-`Enter` la suelta en el lugar y `Esc` cancela el reordenamiento.
+A file that disappears from disk is not removed from the index: it is marked as
+missing and keeps its favorites, in case the external drive comes back.
 
-`COLA` muestra lo que suena ahora, lo encolado a mano y lo que sigue del
-contexto de reproduccion; elegir otro tema para reproducir no borra lo
-encolado a mano, que se mantiene hasta que le toque sonar. `GUARDAR COMO
-PLAYLIST`, al final de esa vista, convierte toda la cola (lo que suena, lo
-encolado y lo que sigue) en una playlist nueva: una sesion de escucha que
-resulto buena pasa a ser algo que dura.
+The context menu (hold OK, or right click) offers `PLAY NOW`, `PLAY NEXT`,
+`ADD TO QUEUE`, `ADD TO PLAYLIST` and `FAVORITE` on any track; inside `QUEUE` or
+a playlist it adds `MOVE` and `REMOVE`. Choosing `MOVE` grabs the row: the
+arrows drag it, `Enter` drops it in place and `Esc` cancels the reorder.
 
-## Desarrollo
+`QUEUE` shows what is playing now, what you queued by hand and what follows from
+the playback context. Choosing another track to play does not clear what you
+queued by hand — it stays until its turn comes. `SAVE AS PLAYLIST`, at the
+bottom of that view, turns the whole queue into a new playlist: a listening
+session that turned out well becomes something that lasts.
+
+## Development
 
 ```bash
 npm install
-npm run dev        # app con recarga en caliente
-npm test           # unitarios (vitest)
-npm run test:e2e   # smoke end-to-end (playwright + electron)
-npm run build:win  # instalador NSIS en dist/
+npm run dev        # app with hot reload
+npm test           # unit tests (vitest)
+npm run test:e2e   # end-to-end smoke test (playwright + electron)
+npm run build:win  # NSIS installer in dist/
 ```
 
-### Si `npm run dev` abre y se cierra al instante
+### If `npm run dev` opens and closes instantly
 
-Algunos entornos (la terminal integrada de VS Code, entre otros) exportan
-`ELECTRON_RUN_AS_NODE=1`. Con esa variable, Electron arranca como Node puro:
-`require('electron')` no devuelve `app` y el proceso muere antes de abrir la
-ventana. Se limpia asi:
+Some environments (the VS Code integrated terminal among them) export
+`ELECTRON_RUN_AS_NODE=1`. With that variable set, Electron starts as plain Node:
+`require('electron')` does not return `app` and the process dies before opening a
+window. Clear it with:
 
 ```powershell
 Remove-Item Env:\ELECTRON_RUN_AS_NODE
 ```
 
-## Como esta armado
+## How it is put together
 
 ```
-src/main/          proceso Node: dueno del disco y del indice
-  library/         SQLite + FTS5, escaneo, lectura de tags
-  media-protocol   sirve el audio por waverr://track/<id>
-src/preload/       unico puente hacia el renderer (contextBridge)
-src/shared/        tipos y reglas que usan los dos lados
-src/renderer/      React: dueno del sonido y del pixel
-  audio/           AudioEngine (fuera de React, sobrevive a los re-render)
-  screen/          pila de vistas (reducer puro) y teclado
-  components/      chasis, LCD, rueda, visualizador
+src/main/          Node process: owns the disk and the index
+  library/         SQLite + FTS5, scanning, tag reading
+  media-protocol   serves audio over waverr://track/<id>
+src/preload/       the only bridge to the renderer (contextBridge)
+src/shared/        types and rules used by both sides
+src/renderer/      React: owns the sound and the pixels
+  audio/           AudioEngine (outside React, survives re-renders)
+  screen/          view stack (pure reducer) and keyboard
+  components/      chassis, LCD, wheel, visualizer
 ```
 
-El renderer nunca toca `fs`. `contextIsolation` y `sandbox` activos,
-`nodeIntegration` apagado.
+The renderer never touches `fs`. `contextIsolation` and `sandbox` are on,
+`nodeIntegration` is off.
 
-### Dos decisiones que explican casi todo
+### Two decisions that explain most of it
 
-**El audio se pide por id, no por ruta.** `waverr://track/42` obliga a que el
-renderer solo pueda nombrar pistas que ya estan en el indice; no existe forma de
-pedir un archivo arbitrario del disco. El proceso main igual revalida que el
-archivo siga dentro de una carpeta raiz registrada antes de abrirlo.
+**Audio is requested by id, not by path.** `waverr://track/42` means the renderer
+can only name tracks that are already in the index; there is no way to ask for an
+arbitrary file on disk. The main process still revalidates that the file is
+inside a registered root folder before opening it.
 
-**El esquema se registra como `standard` y `secure`.** Si Chromium tratara al
-audio como origen opaco, el `MediaElementSource` quedaria *tainted* y el
-`AnalyserNode` devolveria ceros: el visualizador se veria muerto aunque el audio
-sonara. El e2e verifica justamente eso leyendo el nivel del ultimo cuadro.
+**The scheme is registered as `standard` and `secure`.** If Chromium treated the
+audio as an opaque origin, the `MediaElementSource` would be *tainted* and the
+`AnalyserNode` would return zeros: the visualizer would look dead even though the
+audio played. The e2e suite checks exactly that by reading the level of the last
+frame.
 
-### Busqueda
+### Search
 
-El indice FTS5 usa el tokenizer `trigram`, que encuentra subcadenas en cualquier
-posicion: buscar `bpm` matchea `loop_140bpm.wav`. Un tokenizer de palabras solo
-podria matchear desde el principio de cada token. Para consultas de una o dos
-letras, que trigram no puede indexar, se cae a `LIKE %x%`.
+The FTS5 index uses the `trigram` tokenizer, which finds substrings anywhere:
+searching `bpm` matches `loop_140bpm.wav`. A word tokenizer could only match from
+the start of each token. Queries of one or two characters, which trigram cannot
+index, fall back to `LIKE %x%`.
 
-Medido sobre 5.000 archivos: escaneo ~1 s, busqueda mas lenta 4 ms.
+Measured over 5,000 files: scan ~1 s, slowest search 4 ms.
 
-## Formatos
+### Style
 
-Se indexan `.mp3 .wav .flac .m4a .aac .ogg .opus .aiff .aif .wma`.
+Comments, test names and UI strings are in English. There is no linter enforcing
+anything about character sets — an earlier "ASCII only, no accents" convention
+existed solely because the comments used to be in Spanish, and it no longer
+applies.
 
-Reproduccion verificada sobre archivos reales: MP3, WAV, M4A y OGG. FLAC lo
-decodifica Chromium de forma nativa pero todavia no se probo con un archivo de
-verdad.
+## Formats
 
-**AIFF no lo reproduce Chromium.** Los archivos se indexan y se buscan, pero
-falta el decodificador propio que los convierta en `AudioBuffer`.
+Indexed: `.mp3 .wav .flac .m4a .aac .ogg .opus .aiff .aif .wma`.
+
+Playback verified against real files: MP3, WAV, M4A and OGG. Chromium decodes
+FLAC natively but it has not been tried with an actual file yet.
+
+**Chromium does not play AIFF.** Those files are indexed and searchable, but the
+decoder that would turn them into an `AudioBuffer` is still missing.

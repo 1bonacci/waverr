@@ -6,8 +6,8 @@ interface ChassisProps {
 }
 
 /**
- * Carcasa del aparato. Dibuja el cuerpo, la barra de arrastre (la ventana es
- * frameless) y deja un hueco para la pantalla y los controles.
+ * The device's shell. Draws the body and the drag bar (the window is
+ * frameless), and leaves a slot for the screen and the controls.
  */
 export function Chassis({ children }: ChassisProps): JSX.Element {
   return (
@@ -20,8 +20,8 @@ export function Chassis({ children }: ChassisProps): JSX.Element {
               type="button"
               className={styles.windowButton}
               onClick={() => window.waverr.window.minimize()}
-              title="Minimizar"
-              aria-label="Minimizar"
+              title="Minimize"
+              aria-label="Minimize"
             >
               &#8211;
             </button>
@@ -29,8 +29,8 @@ export function Chassis({ children }: ChassisProps): JSX.Element {
               type="button"
               className={styles.windowButton}
               onClick={() => window.waverr.window.close()}
-              title="Cerrar"
-              aria-label="Cerrar"
+              title="Close"
+              aria-label="Close"
             >
               &#10005;
             </button>

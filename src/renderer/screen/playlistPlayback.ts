@@ -1,26 +1,25 @@
 /**
- * Calcula donde arrancar a reproducir al activar una fila de una playlist.
+ * Works out where playback should start when a playlist row is activated.
  *
- * Modulo puro a proposito: no toca IPC ni React, asi que se puede testear
- * entero sin levantar la app.
+ * Deliberately a pure module: it touches neither IPC nor React, so it can be
+ * tested in full without launching the app.
  */
 
-/** Lo minimo que hace falta de una fila de playlist para esta cuenta. */
+/** The minimum a playlist row needs to expose for this calculation. */
 export interface PlaylistPlaybackEntry {
   itemId: number
   missing: boolean
 }
 
 /**
- * Indice, dentro de la lista YA FILTRADA de reproducibles (sin las
- * `missing`), en el que hay que arrancar `audioEngine.playNow`.
+ * Index, within the ALREADY FILTERED list of playable entries (the `missing`
+ * ones removed), where `audioEngine.playNow` should start.
  *
- * Si la fila elegida es reproducible, arranca ahi mismo. Si esta perdida,
- * arranca en la primera reproducible que venga despues en la playlist: no
- * tiene sentido intentar abrir el archivo que falta, pero saltar a la
- * primera pista de la lista (posicion 0) tampoco tiene nada que ver con lo
- * que el usuario eligio. Si no queda ninguna reproducible despues, no hay
- * donde arrancar: devuelve `null`.
+ * If the chosen row is playable, playback starts right there. If it is missing,
+ * it starts at the first playable entry after it in the playlist: there is no
+ * point opening a file that is gone, but jumping to the first track of the list
+ * (position 0) has nothing to do with what the user picked either. If no
+ * playable entry is left after it, there is nowhere to start: returns `null`.
  */
 export function startIndexForEntry(
   entries: ReadonlyArray<PlaylistPlaybackEntry>,

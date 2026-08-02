@@ -10,6 +10,6 @@
   padding: 3px 8px;
   font-size: 9px;
   letter-spacing: 0.12em;
-  color: var(--lcd-bg);
-  background: var(--lcd-ink);
+  color: var(--lcd-accent-ink);
+  background: var(--lcd-accent);
 }

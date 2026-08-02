@@ -3,22 +3,22 @@ import type { Track } from '@shared/types'
 export type RepeatMode = 'off' | 'one' | 'all'
 
 /**
- * Orden de reproduccion, modelado como datos inmutables.
+ * Playback order, modelled as immutable data.
  *
- * Modulo puro a proposito: no toca el DOM ni el AudioContext. `AudioEngine` lo
- * usa para saber que sigue; aca se puede probar todo el comportamiento sin
- * levantar la app.
+ * Deliberately a pure module: it touches neither the DOM nor the AudioContext.
+ * `AudioEngine` uses it to know what comes next; every behaviour can be tested
+ * here without launching the app.
  */
 export interface QueueState {
-  /** Lo que esta sonando. Puede venir de la cola manual o del contexto. */
+  /** What is playing. Can come from the manual queue or from the context. */
   current: Track | null
-  /** Lo que el usuario encolo a proposito. Nunca se mezcla ni se descarta solo. */
+  /** What the user queued on purpose. Never shuffled, never dropped on its own. */
   manual: Track[]
-  /** La lista que se estaba mirando al elegir una pista. */
+  /** The list that was on screen when a track was chosen. */
   context: Track[]
-  /** Permutacion de indices de `context`. Sin shuffle es la identidad. */
+  /** Permutation of `context` indices. Without shuffle it is the identity. */
   order: number[]
-  /** Posicion dentro de `order` de la ultima pista de contexto que sono. */
+  /** Position within `order` of the last context track that played. */
   contextPosition: number
   shuffle: boolean
 }
@@ -39,10 +39,10 @@ export interface QueueView {
 }
 
 /**
- * Reemplaza el contexto y empieza a sonar `context[index]`.
+ * Replaces the context and starts playing `context[index]`.
  *
- * La cola manual sobrevive: lo que el usuario pidio explicitamente no se
- * pierde por elegir otra cosa para escuchar ahora.
+ * The manual queue survives: what the user asked for explicitly is not lost by
+ * choosing something else to listen to now.
  */
 export function playNow(state: QueueState, context: Track[], index: number): QueueState {
   if (context.length === 0) {
@@ -78,13 +78,13 @@ export function removeAt(state: QueueState, index: number): QueueState {
 }
 
 /**
- * Salta directo a una pista de la cola manual sin descartar las que quedaron
- * antes de ella.
+ * Jumps straight to a track in the manual queue without discarding the ones
+ * ahead of it.
  *
- * Elegirla la pone a sonar; las que estaban delante en la cola manual (mas
- * cerca del frente) siguen ahi, listas para sonar despues: lo que el usuario
- * encolo a proposito no se pierde por elegir escuchar antes otra cosa que
- * tambien habia encolado. `index` fuera de rango no hace nada.
+ * Choosing it starts it playing; the ones that were ahead of it in the manual
+ * queue stay there, ready to play afterwards: what the user queued on purpose
+ * is not lost by choosing to hear something else they had also queued. An
+ * out-of-range `index` does nothing.
  */
 export function skipToManual(state: QueueState, index: number): QueueState {
   if (index < 0 || index >= state.manual.length) return state
@@ -94,8 +94,8 @@ export function skipToManual(state: QueueState, index: number): QueueState {
   return { ...state, current: chosen, manual }
 }
 
-/** Mueve dentro de la cola manual. Satura en los extremos: envolver al
- *  reordenar casi siempre es un error de dedo, no una intencion. */
+/** Moves within the manual queue. Saturates at the ends: wrapping around while
+ *  reordering is almost always a slip, not an intention. */
 export function move(state: QueueState, from: number, to: number): QueueState {
   if (from < 0 || from >= state.manual.length) return state
 
@@ -110,8 +110,8 @@ export function move(state: QueueState, from: number, to: number): QueueState {
 }
 
 /**
- * Que suena despues. Devuelve null cuando no queda nada, para que el llamador
- * pause en vez de adivinar.
+ * What plays next. Returns null when nothing is left, so the caller pauses
+ * instead of guessing.
  */
 export function advance(state: QueueState, repeat: RepeatMode): QueueState | null {
   if (repeat === 'one') return state
@@ -133,15 +133,15 @@ export function advance(state: QueueState, repeat: RepeatMode): QueueState | nul
   return null
 }
 
-/** Retrocede dentro del contexto. La cola manual no se recorre hacia atras:
- *  se consume. */
+/** Steps back within the context. The manual queue is not walked backwards:
+ *  it is consumed. */
 export function previous(state: QueueState): QueueState | null {
   if (state.contextPosition <= 0) return null
   const contextPosition = state.contextPosition - 1
   return { ...state, contextPosition, current: trackAt(state, contextPosition) }
 }
 
-/** Mezcla o desmezcla el contexto sin mover lo que esta sonando. */
+/** Shuffles or unshuffles the context without moving what is playing. */
 export function setShuffle(state: QueueState, shuffle: boolean): QueueState {
   if (shuffle === state.shuffle) return state
   if (state.context.length === 0) return { ...state, shuffle }
@@ -168,8 +168,8 @@ function trackAt(state: QueueState, position: number): Track | null {
   return state.context[index] ?? null
 }
 
-/** Con shuffle, la pista elegida queda primera y el resto se mezcla: asi
- *  activar shuffle nunca interrumpe lo que ya estaba sonando. */
+/** With shuffle on, the chosen track stays first and the rest is shuffled, so
+ *  turning shuffle on never interrupts what was already playing. */
 function buildOrder(length: number, startIndex: number, shuffle: boolean): number[] {
   const indices = Array.from({ length }, (_, index) => index)
   if (!shuffle) return indices
