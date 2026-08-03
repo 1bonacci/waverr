@@ -6,17 +6,20 @@ import { ListView } from './views/ListView'
 import { NowPlayingView } from './views/NowPlayingView'
 import { PromptView } from './views/PromptView'
 import { QueueView } from './views/QueueView'
+import { SplashScreen } from './SplashScreen'
 import styles from './Screen.module.css'
 
 interface ScreenProps {
   controller: ScreenController
+  showSplash: boolean
+  onSplashDone: () => void
 }
 
 /**
  * The LCD screen. Everything the user sees lives in here: there are no panels
  * outside the device.
  */
-export function Screen({ controller }: ScreenProps): JSX.Element {
+export function Screen({ controller, showSplash, onSplashDone }: ScreenProps): JSX.Element {
   const playback = usePlayback()
   const { view, scan } = controller
   const volumeFlash = useVolumeFlash(playback.volume)
@@ -24,6 +27,7 @@ export function Screen({ controller }: ScreenProps): JSX.Element {
   return (
     <div className={styles.bezel}>
       <div className={styles.glass}>
+        {showSplash && <SplashScreen onDone={onSplashDone} />}
         <div className={styles.header}>
           <span className={styles.headerTitle} data-testid="screen-title">
             {controller.title}
@@ -131,10 +135,10 @@ function statusText(
   // that tells the user the library is still incomplete.
   if (scan) {
     const suffix = scan.total > 0 ? `${scan.done}/${scan.total}` : String(scan.done)
-    return `${scan.phase === 'metadata' ? 'TAGS' : 'SCAN'} ${suffix}`
+    return `${scan.phase === 'metadata' ? 'Tags' : 'Scan'} ${suffix}`
   }
 
-  if (volumeFlash !== null) return `VOL ${Math.round(volumeFlash * 100)}%`
+  if (volumeFlash !== null) return `Vol ${Math.round(volumeFlash * 100)}%`
 
   switch (status) {
     case 'playing':

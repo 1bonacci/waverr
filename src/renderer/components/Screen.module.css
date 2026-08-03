@@ -57,6 +57,8 @@
 .headerTitle {
   flex: 1;
   min-width: 0;
+  font-family: var(--font-ui);
+  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -102,7 +104,7 @@
   /* The glyph is small and the header is thin, so the hit area is widened
      rather than the icon. */
   padding: 0 2px;
-  font-family: inherit;
+  font-family: var(--font-ui);
   font-size: 14px;
   line-height: 1;
   color: var(--lcd-ink-dim);

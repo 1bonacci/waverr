@@ -1,0 +1,249 @@
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--lcd-bg-glow);
+  /* The overlay is opaque from the first frame -- it is what hides the real
+     screen -- so what fades here is only the exit. The delay is passed inline
+     so it lines up with the logo's own timeline without duplicating the
+     constants. `both` keeps the final transparent frame until React unmounts
+     us, otherwise the overlay snaps back to opaque for a frame at the end. */
+  animation: fadeOut 520ms cubic-bezier(0.4, 0, 0.7, 0.2) both;
+}
+
+/*
+ * The logo and its glow are separate elements stacked on top of each other,
+ * rather than one element running two animations.
+ *
+ * They used to share `.logo`, and both animated `filter` -- so for the 200ms
+ * they overlapped the pulse simply won and threw away the twirl's settled
+ * `blur(0) brightness(1)`, then handed it back the instant the pulse ended.
+ * That snap is most of what read as harsh. CSS has no per-property animation
+ * priority, so the only real fix is to stop the two sharing a property.
+ */
+.stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+/*
+ * A wrapper whose only job is to carry the swell that goes with the glow.
+ *
+ * The logo cannot do this itself: `twirlIn` holds `transform` with a `both`
+ * fill, so a second animation on the same element would overwrite the settled
+ * `scale(1) rotate(360deg)` outright -- the same collision the glow used to
+ * have over `filter`. Nesting instead multiplies the two transforms, so the
+ * swell rides on top of whatever the twirl left behind.
+ */
+.breathe {
+  grid-area: 1 / 1;
+  display: grid;
+  place-items: center;
+  animation: logoSwell 1400ms cubic-bezier(0.37, 0, 0.63, 1) both;
+}
+
+.logo {
+  width: 200px;
+  height: 200px;
+  object-fit: contain;
+  grid-area: 1 / 1;
+  /* The easing overshoots on purpose, but it is applied per-property below:
+     letting the bounce drive the blur made the focus wobble on the way in. */
+  animation: twirlIn 1500ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  /* Delay is passed inline, keyed off the lead-in constant. */
+}
+
+/*
+ * The glow sits behind the logo as its own light, so it can bloom outward
+ * without being clipped to the logo's alpha the way a drop-shadow is. A
+ * radial gradient falls off smoothly to the edge; a box-shadow or drop-shadow
+ * has a defined boundary that shows up as a ring at low opacity.
+ */
+.glow {
+  grid-area: 1 / 1;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at center,
+    var(--lcd-fg, currentColor) 0%,
+    color-mix(in srgb, var(--lcd-fg, currentColor) 45%, transparent) 35%,
+    transparent 70%
+  );
+  opacity: 0;
+  /* Scaling the light up as it brightens is what makes it read as a bloom
+     rather than a lamp being switched on at a fixed size. */
+  animation: glowPulse 1400ms cubic-bezier(0.37, 0, 0.63, 1) both;
+  pointer-events: none;
+}
+
+/*
+ * The logo enters from nothing: a dim, small, blurred shape that resolves as
+ * it turns. The blur and brightness carry most of the "materialising" read --
+ * without them the scale-up alone looks like a plain zoom.
+ */
+@keyframes twirlIn {
+  0% {
+    opacity: 0;
+    filter: blur(10px) brightness(1.5);
+    transform: scale(0.3) rotate(0deg);
+  }
+  /* Opaque almost immediately: the logo is *present* from the first frame of
+     the twirl and the blur does the rest of the entrance. A slow opacity ramp
+     here meant the logo was still invisible a third of the way in, which is
+     what put the boot sound ahead of anything on screen. */
+  12% {
+    opacity: 1;
+    filter: blur(6px) brightness(1.32);
+  }
+  /* Focus resolves earlier and more gradually than the rotation finishes. The
+     blur used to still be clearing at 35% and hit zero exactly on the 70%
+     overshoot, which tied sharpness to the bounce and made the logo look like
+     it snapped into focus at the moment it recoiled. Now it is settled well
+     before, and the overshoot is pure movement. */
+  30% {
+    opacity: 1;
+    filter: blur(3px) brightness(1.18);
+  }
+  50% {
+    opacity: 1;
+    filter: blur(0.6px) brightness(1.06);
+  }
+  68% {
+    opacity: 1;
+    filter: blur(0) brightness(1);
+  }
+  70% {
+    transform: scale(1.04) rotate(340deg);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0) brightness(1);
+    transform: scale(1) rotate(360deg);
+  }
+}
+
+/*
+ * A single slow breath of light after the logo lands, timed to the tail of the
+ * boot sound. This is the "it powered on" beat that the hold used to spend
+ * doing nothing.
+ *
+ * Animating opacity and scale rather than a drop-shadow radius. The old version
+ * interpolated from `drop-shadow(0 0 0 transparent)`, so the glow faded up
+ * through desaturated grey before reaching its colour -- light does not arrive
+ * that way, and it was a large part of why this looked synthetic. Opacity on a
+ * gradient that is already the right colour ramps cleanly, and both properties
+ * are compositor-driven so the swell stays smooth.
+ *
+ * The decay is deliberately longer than the rise: light sources fall off slower
+ * than they come up, and a symmetric pulse reads mechanical. Hence the peak at
+ * 42% rather than the midpoint.
+ */
+@keyframes glowPulse {
+  0% {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+  42% {
+    opacity: 0.85;
+    transform: scale(1.15);
+  }
+  /* A slight hold near the top before the fall, so the peak has weight instead
+     of being a single instant the animation passes through. */
+  58% {
+    opacity: 0.66;
+    transform: scale(1.2);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.42);
+  }
+}
+
+/*
+ * The logo swells with the glow and settles back as it disperses.
+ *
+ * Shares the glow's duration, delay and easing, so the two are locked together
+ * -- the logo is biggest when the light is brightest (42%), then eases back to
+ * its own size while the ring carries on expanding and fading past it.
+ *
+ * The scale is small on purpose: 1.09 on a 200px logo is ~18px of growth, which
+ * is enough to feel like a bounce without the logo appearing to lunge at the
+ * viewer. The slight undershoot at 78% is what makes it playful rather than a
+ * flat return -- it settles like something with weight instead of easing to a
+ * stop on a curve.
+ */
+@keyframes logoSwell {
+  0% {
+    transform: scale(1);
+  }
+  42% {
+    transform: scale(1.09);
+  }
+  58% {
+    transform: scale(1.07);
+  }
+  78% {
+    transform: scale(0.985);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/*
+ * The logo leaves before the overlay does, so the backdrop is briefly empty --
+ * the screen dissolves rather than the logo being wiped away with it.
+ */
+@keyframes logoOut {
+  /* An explicit start frame: the exit is applied by swapping the animation out,
+     and without this the blur would jump from whatever the twirl left to its
+     first computed frame. The midpoint keeps opacity ahead of the blur so the
+     logo thins out as it softens instead of smearing. */
+  0% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+  55% {
+    opacity: 0.4;
+    filter: blur(2.5px);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.12);
+    filter: blur(6px);
+  }
+}
+
+@keyframes fadeOut {
+  to {
+    opacity: 0;
+  }
+}
+
+/*
+ * Motion is decorative here and the splash blocks the app behind it, so when
+ * motion is reduced everything holds still and the overlay just fades.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .logo {
+    animation: none;
+    opacity: 1;
+  }
+
+  /* The glow is pure decoration; with motion reduced it does not appear at all
+     rather than pulsing in place. */
+  .glow {
+    animation: none;
+    opacity: 0;
+  }
+
+  .breathe {
+    animation: none;
+  }
+}

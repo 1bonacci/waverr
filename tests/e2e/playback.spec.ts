@@ -87,9 +87,9 @@ test.afterAll(async () => {
 })
 
 test('the root menu starts on ALL TRACKS', async () => {
-  await expect(page.getByTestId('screen-title')).toHaveText('WAVERR')
+  await expect(page.getByTestId('screen-title')).toHaveText('HOME')
   const rows = page.getByTestId('screen-row')
-  await expect(rows.first()).toHaveText(/ALL TRACKS/)
+  await expect(rows.first()).toHaveText(/ALL TRACKS/i)
   await expect(rows.first()).toHaveAttribute('data-selected', 'true')
 })
 
@@ -108,6 +108,43 @@ test('every file is reachable in one flat list, with its folder shown', async ()
   // Each row carries the folder it came from.
   expect(labels[0]).toContain('idea_140bpm.wav')
   expect(labels[0]).toContain('demos')
+})
+
+test('clicking a track never blanks the list, even when it changes what plays', async () => {
+  const rows = page.getByTestId('screen-row')
+
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'ALL TRACKS' }).click()
+  await expect(rows).toHaveCount(TRACK_COUNT, { timeout: 10000 })
+
+  // Reloading the list view (as QUEUE must, to track NOW) used to clear
+  // `items` first and rebuild async, so the list flashed empty for a frame
+  // every time playback moved to a different track -- including from a plain
+  // click here on ALL TRACKS, a view that has nothing to do with QUEUE. A
+  // MutationObserver catches that frame even if it never shows up in a
+  // Playwright poll.
+  await page.evaluate(() => {
+    const list = document.querySelector('[data-testid="screen-list"]')
+    ;(window as unknown as { __sawEmptyList: boolean }).__sawEmptyList = false
+    if (!list?.parentElement) return
+    const observer = new MutationObserver(() => {
+      if (!document.querySelector('[data-testid="screen-list"]')) {
+        ;(window as unknown as { __sawEmptyList: boolean }).__sawEmptyList = true
+      }
+    })
+    observer.observe(list.parentElement, { childList: true, subtree: true })
+    ;(window as unknown as { __listObserver: MutationObserver }).__listObserver = observer
+  })
+
+  await rows.nth(0).click()
+  await rows.nth(1).click()
+  await rows.nth(2).click()
+  await expect(page.getByTestId('screen-status')).toHaveText(PLAYING, { timeout: 10000 })
+
+  const sawEmpty = await page.evaluate(
+    () => (window as unknown as { __sawEmptyList: boolean }).__sawEmptyList
+  )
+  expect(sawEmpty).toBe(false)
 })
 
 /**
@@ -129,7 +166,7 @@ test('a track is reachable with two keypresses and no folder drilling', async ()
   const rows = page.getByTestId('screen-row')
   await page.keyboard.press('Home')
 
-  await expect(rows.first()).toHaveText(/ALL TRACKS/)
+  await expect(rows.first()).toHaveText(/ALL TRACKS/i)
   await page.keyboard.press('Enter')
 
   await expect(rows.first()).toHaveText(/\.wav/)
@@ -157,9 +194,41 @@ test('skipping forward crosses folder boundaries instead of stopping', async () 
   await openNowPlaying()
   await expect(page.getByTestId('np-title')).toHaveText('idea_140bpm.wav')
 
+  // ArrowRight seeks within NOW PLAYING, so NEXT is triggered from the list
+  // instead, where it still means "next track".
+  await page.keyboard.press('Escape')
   await page.keyboard.press('ArrowRight')
 
+  await openNowPlaying()
   await expect(page.getByTestId('np-title')).toHaveText('drag_a.wav', { timeout: 10000 })
+})
+
+test('in NOW PLAYING, left/right seek instead of changing track, and up/down change track', async () => {
+  const rows = page.getByTestId('screen-row')
+  const positionMs = async (): Promise<number> =>
+    Number(await page.getByTestId('now-playing').getAttribute('data-position'))
+
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'ALL TRACKS' }).click()
+  await rows.filter({ hasText: 'idea_140bpm' }).click()
+
+  await openNowPlaying()
+  await expect(page.getByTestId('np-title')).toHaveText('idea_140bpm.wav')
+
+  // Get partway into the track so a seek back is visible and never clamps to 0.
+  await expect.poll(positionMs, { timeout: 10000 }).toBeGreaterThan(2000)
+  const before = await positionMs()
+
+  await page.keyboard.press('ArrowLeft')
+  await expect.poll(positionMs).toBeLessThan(before)
+  // Still the same track: a seek, not a skip.
+  await expect(page.getByTestId('np-title')).toHaveText('idea_140bpm.wav')
+
+  await page.keyboard.press('ArrowDown')
+  await expect(page.getByTestId('np-title')).toHaveText('drag_a.wav', { timeout: 10000 })
+
+  await page.keyboard.press('ArrowUp')
+  await expect(page.getByTestId('np-title')).toHaveText('idea_140bpm.wav', { timeout: 10000 })
 })
 
 /** Playback indicator drawn on the LCD. */
@@ -206,14 +275,14 @@ test('typing anywhere opens search and filters live', async () => {
   await page.keyboard.press('Backspace')
   await page.keyboard.press('Backspace')
   await page.keyboard.press('Backspace')
-  await expect(page.getByTestId('screen-title')).toHaveText('WAVERR')
+  await expect(page.getByTestId('screen-title')).toHaveText('HOME')
 })
 
 test('F marks a favorite and it shows up under FAVORITES', async () => {
   const rows = page.getByTestId('screen-row')
 
   await page.keyboard.press('Home')
-  await expect(rows.first()).toHaveText(/ALL TRACKS/)
+  await expect(rows.first()).toHaveText(/ALL TRACKS/i)
   await page.keyboard.press('Enter')
   await expect(rows.first()).toHaveText(/idea_140bpm/)
 
@@ -457,7 +526,7 @@ test('holding Backspace clears the query without leaving the search', async () =
 
   // A deliberate press after the hold still leaves.
   await page.keyboard.press('Backspace')
-  await expect(page.getByTestId('screen-title')).toHaveText('WAVERR')
+  await expect(page.getByTestId('screen-title')).toHaveText('HOME')
 })
 
 test('holding Enter opens the context menu instead of playing the track', async () => {
@@ -484,7 +553,7 @@ test('the magnifying glass opens search, and +/- moves the volume', async () => 
   await page.getByTestId('search-button').click()
   await expect(page.getByTestId('screen-title')).toHaveText('SEARCH: _')
   await page.keyboard.press('Escape')
-  await expect(page.getByTestId('screen-title')).toHaveText('WAVERR')
+  await expect(page.getByTestId('screen-title')).toHaveText('HOME')
 
   // The engine's <audio> is never attached to the document, so the level is
   // read where the slider reads it: off the rendered fill on NOW PLAYING.
@@ -515,6 +584,31 @@ test('the magnifying glass opens search, and +/- moves the volume', async () => 
   // The volume keys must not have leaked into a search box on the way: they
   // adjust the level and are never typed.
   await expect(page.getByTestId('screen-title')).toHaveText('NOW PLAYING')
+})
+
+test('the progress bar can be clicked or dragged to seek', async () => {
+  const rows = page.getByTestId('screen-row')
+  const positionMs = async (): Promise<number> =>
+    Number(await page.getByTestId('now-playing').getAttribute('data-position'))
+
+  await page.keyboard.press('Home')
+  await rows.filter({ hasText: 'ALL TRACKS' }).click()
+  await rows.filter({ hasText: 'idea_140bpm' }).click()
+  await openNowPlaying()
+
+  const bar = page.getByTestId('progress')
+  const box = (await bar.boundingBox())!
+
+  await bar.click({ position: { x: box.width * 0.8, y: box.height / 2 } })
+  await expect.poll(positionMs).toBeGreaterThan(3000)
+
+  // Dragging sets position from wherever the pointer lands, same as volume.
+  await page.mouse.move(box.x + box.width * 0.1, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width * 0.4, box.y + box.height / 2)
+  await page.mouse.up()
+  await expect.poll(positionMs).toBeGreaterThan(1500)
+  await expect.poll(positionMs).toBeLessThan(2600)
 })
 
 test('the header note returns to the track without restarting it', async () => {

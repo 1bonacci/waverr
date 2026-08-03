@@ -2,10 +2,7 @@ import { useEffect, useRef, type JSX } from 'react'
 import { audioEngine } from '../audio/AudioEngine'
 import { usePlayback } from '../audio/usePlayback'
 import { useUiStore } from '../store/ui'
-
-export type VisualizerMode = 'bars' | 'scope' | 'ambient'
-
-export const VISUALIZER_MODES: VisualizerMode[] = ['bars', 'scope', 'ambient']
+import type { VisualizerMode } from './visualizerMode'
 
 /** Refresh cap. This is decoration: it must not fight the user's DAW for CPU. */
 const TARGET_FPS = 40

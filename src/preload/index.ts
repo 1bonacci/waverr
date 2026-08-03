@@ -14,7 +14,12 @@ import {
 const api: WaverrApi = {
   window: {
     minimize: () => ipcRenderer.send(IPC.windowMinimize),
-    close: () => ipcRenderer.send(IPC.windowClose)
+    close: () => ipcRenderer.send(IPC.windowClose),
+    onShown: (listener: () => void) => {
+      const handler = (): void => listener()
+      ipcRenderer.on(IPC.windowShown, handler)
+      return () => ipcRenderer.removeListener(IPC.windowShown, handler)
+    }
   },
   library: {
     listRoots: () => ipcRenderer.invoke(IPC.libraryListRoots),

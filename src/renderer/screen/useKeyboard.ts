@@ -4,7 +4,7 @@ import { useUiStore } from '../store/ui'
 import { LONG_PRESS_MS } from './useLongPress'
 import type { ScreenController } from './useScreen'
 
-/** How far holding PREV or NEXT seeks on each repeat. */
+/** How far each press (or autorepeat step, while held) seeks in NOW PLAYING. */
 const SEEK_STEP_MS = 5000
 
 /** How much one press of the volume keys moves the level. */
@@ -80,10 +80,20 @@ export function useKeyboardControls(controller: ScreenController): void {
       switch (key) {
         case 'ArrowUp':
           event.preventDefault()
+          // In NOW PLAYING there is no list to move a selection in, so Up/Down
+          // instead skip to the previous/next track.
+          if (controller.view.kind === 'nowPlaying') {
+            if (!event.repeat) void audioEngine.previous()
+            return
+          }
           controller.moveBy(-1)
           return
         case 'ArrowDown':
           event.preventDefault()
+          if (controller.view.kind === 'nowPlaying') {
+            if (!event.repeat) void audioEngine.next()
+            return
+          }
           controller.moveBy(1)
           return
         case 'PageUp':
@@ -151,14 +161,26 @@ export function useKeyboardControls(controller: ScreenController): void {
           return
         case 'ArrowLeft':
           event.preventDefault()
-          if (event.repeat) audioEngine.seek(audioEngine.getState().positionMs - SEEK_STEP_MS)
-          else void audioEngine.previous()
+          // In NOW PLAYING, Left/Right seek within the track (holding repeats
+          // via autorepeat). Everywhere else they skip to the previous/next
+          // track, like a real device's forward/back buttons.
+          if (controller.view.kind === 'nowPlaying') {
+            audioEngine.seek(audioEngine.getState().positionMs - SEEK_STEP_MS)
+          } else if (!event.repeat) {
+            void audioEngine.previous()
+          }
           return
         case 'ArrowRight':
           event.preventDefault()
-          if (event.repeat) audioEngine.seek(audioEngine.getState().positionMs + SEEK_STEP_MS)
-          else void audioEngine.next()
+          if (controller.view.kind === 'nowPlaying') {
+            audioEngine.seek(audioEngine.getState().positionMs + SEEK_STEP_MS)
+          } else if (!event.repeat) {
+            void audioEngine.next()
+          }
           return
+        // Not surfaced in the KEYBINDS help or the README -- kept working
+        // (mainly for e2e tests) but not advertised, since it duplicates
+        // Escape/Backspace and was more confusing than useful as a shortcut.
         case 'Home':
           event.preventDefault()
           controller.dispatch({ type: 'home' })

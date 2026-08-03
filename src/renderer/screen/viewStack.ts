@@ -19,6 +19,8 @@ export type MenuId =
   /** Submenu of SETTINGS: the tracks hidden from the library, so hiding one by
    *  mistake is not permanent. */
   | 'hiddenTracks'
+  /** Submenu of SETTINGS: a static reference list of every keybind. */
+  | 'keybindsHelp'
 
 /** Where the row the context menu was opened on came from. Determines which
  *  actions make sense: only inside the queue or a playlist can something be

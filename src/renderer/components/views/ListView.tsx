@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, type JSX, type RefObject } from 'react'
 import type { ScreenController, ScreenItem } from '../../screen/useScreen'
 import { useLongPress } from '../../screen/useLongPress'
+import { usePlayingTrackId } from '../../audio/usePlayback'
 import styles from './ListView.module.css'
 
 interface ListViewProps {
@@ -14,6 +15,7 @@ interface ListViewProps {
 export function ListView({ controller }: ListViewProps): JSX.Element {
   const { items, selected, loading, view } = controller
   const selectedRef = useRef<HTMLButtonElement>(null)
+  const playingTrackId = usePlayingTrackId()
 
   // The row held in move mode, if any: only exists in QUEUE and PLAYLIST.
   const movingTo =
@@ -25,7 +27,7 @@ export function ListView({ controller }: ListViewProps): JSX.Element {
   }, [selected, items])
 
   if (items.length === 0) {
-    return <div className={styles.empty}>{loading ? 'LOADING...' : 'EMPTY'}</div>
+    return <div className={styles.empty}>{loading ? 'Loading...' : 'Empty'}</div>
   }
 
   return (
@@ -41,6 +43,7 @@ export function ListView({ controller }: ListViewProps): JSX.Element {
               index={index}
               selected={index === selected}
               moving={index === movingTo}
+              playing={item.trackId !== undefined && item.trackId === playingTrackId}
               controller={controller}
               rowRef={index === selected ? selectedRef : undefined}
             />
@@ -91,6 +94,7 @@ function Row({
   index,
   selected,
   moving,
+  playing,
   controller,
   rowRef
 }: {
@@ -98,6 +102,7 @@ function Row({
   index: number
   selected: boolean
   moving: boolean
+  playing: boolean
   controller: ScreenController
   rowRef?: RefObject<HTMLButtonElement | null>
 }): JSX.Element {
@@ -127,13 +132,15 @@ function Row({
       data-testid="screen-row"
       data-selected={selected ? 'true' : 'false'}
       data-moving={moving ? 'true' : 'false'}
-      className={`${styles.row} ${selected ? styles.rowSelected : ''} ${moving ? styles.rowMoving : ''}`}
+      data-playing={playing ? 'true' : 'false'}
+      className={`${styles.row} ${selected ? styles.rowSelected : ''} ${moving ? styles.rowMoving : ''} ${playing ? styles.rowPlaying : ''}`}
       onContextMenu={(event) => {
         event.preventDefault()
         controller.openContextMenu(index)
       }}
       {...press}
     >
+      {playing && <span className={styles.playingMark}>♪</span>}
       {item.favorite && <span className={styles.star}>★</span>}
       {moving && (
         <span className={styles.moveMark} aria-hidden="true">
