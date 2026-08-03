@@ -372,10 +372,10 @@ export class AudioEngine {
     const code = this.audio.error?.code
     const message =
       code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
-        ? 'UNSUPPORTED FORMAT'
+        ? 'Unsupported format'
         : code === MediaError.MEDIA_ERR_DECODE
-          ? 'CORRUPT FILE'
-          : 'READ ERROR'
+          ? 'Corrupt file'
+          : 'Read error'
     this.patch({ status: 'error', error: message })
   }
 
@@ -387,9 +387,9 @@ export class AudioEngine {
 
 function describeError(error: unknown): string {
   if (error instanceof DOMException && error.name === 'NotAllowedError') {
-    return 'PLAYBACK BLOCKED'
+    return 'Playback blocked'
   }
-  return error instanceof Error ? error.message.toUpperCase() : 'ERROR'
+  return error instanceof Error ? error.message : 'Error'
 }
 
 /** Instancia unica de la app. */

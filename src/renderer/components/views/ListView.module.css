@@ -116,6 +116,23 @@
   line-height: 1;
 }
 
+/* Marks track currently loaded in engine, regardless of list selection --
+   without this cue, jumping around list lose track of what actually play. */
+.rowPlaying:not(.rowSelected) {
+  color: var(--lcd-accent);
+}
+
+.playingMark {
+  flex: 0 0 auto;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--lcd-accent);
+}
+
+.rowSelected .playingMark {
+  color: var(--lcd-accent-ink);
+}
+
 .label {
   flex: 1;
   min-width: 0;

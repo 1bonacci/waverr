@@ -78,12 +78,12 @@ export interface ScreenController {
 }
 
 const ROOT_MENU: Array<{ id: string; label: string; view: View }> = [
-  { id: 'tracks', label: 'ALL TRACKS', view: { kind: 'menu', menu: 'tracks', selected: 0 } },
-  { id: 'recent', label: 'RECENT', view: { kind: 'menu', menu: 'recent', selected: 0 } },
-  { id: 'favorites', label: 'FAVORITES', view: { kind: 'menu', menu: 'favorites', selected: 0 } },
-  { id: 'playlists', label: 'PLAYLISTS', view: { kind: 'menu', menu: 'playlists', selected: 0 } },
-  { id: 'queue', label: 'QUEUE', view: { kind: 'queue', selected: 0, moving: null } },
-  { id: 'settings', label: 'SETTINGS', view: { kind: 'menu', menu: 'settings', selected: 0 } }
+  { id: 'tracks', label: 'All Tracks', view: { kind: 'menu', menu: 'tracks', selected: 0 } },
+  { id: 'recent', label: 'Recent', view: { kind: 'menu', menu: 'recent', selected: 0 } },
+  { id: 'favorites', label: 'Favorites', view: { kind: 'menu', menu: 'favorites', selected: 0 } },
+  { id: 'playlists', label: 'Playlists', view: { kind: 'menu', menu: 'playlists', selected: 0 } },
+  { id: 'queue', label: 'Queue', view: { kind: 'queue', selected: 0, moving: null } },
+  { id: 'settings', label: 'Settings', view: { kind: 'menu', menu: 'settings', selected: 0 } }
 ]
 
 /**
@@ -157,6 +157,17 @@ export function useScreen(): ScreenController {
     return () => clearTimeout(timer)
   }, [undo])
 
+  // QUEUE has no key of its own (`viewKey` is the constant 'queue'), so it
+  // needs `playback.track?.id`/`manualCount` in the reload trigger below to
+  // notice that NOW changed or that something was queued or removed by hand.
+  // Every other view is keyed by `viewKey` already and must NOT reload just
+  // because the engine ticked over to a new track: reloading briefly empties
+  // `items` (see below), and doing that on every other screen too flashed the
+  // whole list blank each time a different track started playing.
+  const isQueueView = view.kind === 'queue'
+  const queueTrackId = isQueueView ? playback.track?.id : undefined
+  const queueManualCount = isQueueView ? playback.manualCount : undefined
+
   useEffect(() => {
     const token = ++loadTokenRef.current
     let cancelled = false
@@ -181,12 +192,8 @@ export function useScreen(): ScreenController {
       cancelled = true
     }
     // `view` is rebuilt on every selection move; `viewKey` is not.
-    // `playback.track?.id` and `playback.manualCount` cover the QUEUE view: it
-    // has no key of its own (`viewKey` is the constant 'queue'), so without
-    // them it would never notice that NOW changed or that something was queued
-    // or removed by hand.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewKey, revision, pendingTrackId, playback.track?.id, playback.manualCount])
+  }, [viewKey, revision, pendingTrackId, queueTrackId, queueManualCount])
 
   // How many rows count for the move-mode arithmetic: everything except action
   // rows (SAVE AS PLAYLIST). Without this filter the marker could come to rest
@@ -317,7 +324,7 @@ export function useScreen(): ScreenController {
     if (intent.kind === 'newPlaylist') {
       const playlist = await window.waverr.library.createPlaylist(value)
       if (!playlist) {
-        setPromptError('ALREADY EXISTS')
+        setPromptError('Already exists')
         return
       }
       if (intent.trackIdToAdd !== undefined) {
@@ -325,7 +332,7 @@ export function useScreen(): ScreenController {
       }
     } else if (intent.kind === 'renamePlaylist') {
       if (!(await window.waverr.library.renamePlaylist(intent.playlistId, value))) {
-        setPromptError('ALREADY EXISTS')
+        setPromptError('Already exists')
         return
       }
     } else {
@@ -334,7 +341,7 @@ export function useScreen(): ScreenController {
         .filter((track): track is Track => track !== null)
         .map((track) => track.id)
       if (!(await window.waverr.library.createPlaylistFromTracks(value, trackIds))) {
-        setPromptError('ALREADY EXISTS')
+        setPromptError('Already exists')
         return
       }
     }
@@ -402,29 +409,30 @@ function titleFor(view: View): string {
     case 'menu':
       return MENU_TITLES[view.menu]
     case 'search':
-      return `SEARCH: ${view.query.toUpperCase()}`
+      return `Search: ${view.query}`
     case 'queue':
-      return 'QUEUE'
+      return 'Queue'
     case 'playlist':
-      return view.name.toUpperCase()
+      return view.name
     case 'prompt':
       return view.label
     case 'context':
-      return 'ACTIONS'
+      return 'Actions'
     case 'nowPlaying':
-      return 'NOW PLAYING'
+      return 'Now Playing'
   }
 }
 
 const MENU_TITLES: Record<MenuId, string> = {
-  root: 'WAVERR',
-  tracks: 'ALL TRACKS',
-  recent: 'RECENT',
-  favorites: 'FAVORITES',
-  playlists: 'PLAYLISTS',
-  playlistPicker: 'ADD TO PLAYLIST',
-  settings: 'SETTINGS',
-  hiddenTracks: 'HIDDEN TRACKS'
+  root: 'Home',
+  tracks: 'All Tracks',
+  recent: 'Recent',
+  favorites: 'Favorites',
+  playlists: 'Playlists',
+  playlistPicker: 'Add to Playlist',
+  settings: 'Settings',
+  hiddenTracks: 'Hidden Tracks',
+  keybindsHelp: 'Keybinds'
 }
 
 async function buildItems(
@@ -457,7 +465,7 @@ async function buildItems(
 
     case 'playlist': {
       const entries = await window.waverr.library.listPlaylistTracks(view.playlistId)
-      if (entries.length === 0) return [emptyItem('PLAYLIST EMPTY')]
+      if (entries.length === 0) return [emptyItem('Playlist empty')]
 
       return entries.map((entry, index) => ({
         key: `item-${entry.itemId}`,
@@ -505,7 +513,7 @@ async function buildItems(
             key: 'now',
             label: displayName(row.track),
             meta: row.track.folder,
-            sectionHeader: 'NOW',
+            sectionHeader: 'Now',
             activate: () => dispatch({ type: 'openNowPlaying' })
           })
           continue
@@ -519,7 +527,7 @@ async function buildItems(
             meta: row.track.folder,
             // Header only on the first row of the section, so it does not
             // repeat on every queued track.
-            sectionHeader: manualIndex === 0 ? 'NEXT UP' : undefined,
+            sectionHeader: manualIndex === 0 ? 'Next up' : undefined,
             trackId: row.track.id,
             favorite: row.track.favorite,
             contextTarget: {
@@ -550,23 +558,23 @@ async function buildItems(
           key: `upcoming-${upcomingIndex}-${row.track.id}`,
           label: displayName(row.track),
           meta: row.track.folder,
-          sectionHeader: upcomingIndex === 0 ? 'LATER' : undefined,
+          sectionHeader: upcomingIndex === 0 ? 'Later' : undefined,
           trackId: row.track.id,
           favorite: row.track.favorite,
           activate: () => void audioEngine.playNow(upcomingTracks, upcomingIndex)
         })
       }
 
-      if (items.length === 0) return [emptyItem('QUEUE EMPTY')]
+      if (items.length === 0) return [emptyItem('Queue empty')]
 
       items.push({
         key: 'save',
-        label: 'SAVE AS PLAYLIST',
+        label: 'Save as playlist',
         isAction: true,
         activate: () =>
           dispatch({
             type: 'push',
-            view: { kind: 'prompt', label: 'NAME', value: '', intent: { kind: 'saveQueue' } }
+            view: { kind: 'prompt', label: 'Name', value: '', intent: { kind: 'saveQueue' } }
           })
       })
 
@@ -605,13 +613,13 @@ async function buildMenuItems(
      */
     case 'tracks': {
       const tracks = await window.waverr.library.search({ sort: 'folder', limit: LIST_LIMIT })
-      if (tracks.length === 0) return [emptyItem('NO TRACKS')]
+      if (tracks.length === 0) return [emptyItem('No tracks')]
       return tracks.map(trackItem(tracks, dispatch))
     }
 
     case 'recent': {
       const tracks = await window.waverr.library.search({ sort: 'recent', limit: LIST_LIMIT })
-      if (tracks.length === 0) return [emptyItem('NOTHING YET')]
+      if (tracks.length === 0) return [emptyItem('Nothing yet')]
       return tracks.map(trackItem(tracks, dispatch))
     }
 
@@ -621,7 +629,7 @@ async function buildMenuItems(
         sort: 'folder',
         limit: LIST_LIMIT
       })
-      if (tracks.length === 0) return [emptyItem('NO FAVORITES')]
+      if (tracks.length === 0) return [emptyItem('No favorites')]
       return tracks.map(trackItem(tracks, dispatch))
     }
 
@@ -636,7 +644,7 @@ async function buildMenuItems(
         sort: 'folder',
         limit: LIST_LIMIT
       })
-      if (tracks.length === 0) return [emptyItem('NOTHING HIDDEN')]
+      if (tracks.length === 0) return [emptyItem('Nothing hidden')]
 
       return tracks.map((track) => ({
         key: String(track.id),
@@ -657,11 +665,11 @@ async function buildMenuItems(
       const items: ScreenItem[] = [
         {
           key: 'new',
-          label: '+ NEW PLAYLIST',
+          label: '+ New playlist',
           activate: () =>
             dispatch({
               type: 'push',
-              view: { kind: 'prompt', label: 'NAME', value: '', intent: { kind: 'newPlaylist' } }
+              view: { kind: 'prompt', label: 'Name', value: '', intent: { kind: 'newPlaylist' } }
             })
         }
       ]
@@ -702,13 +710,13 @@ async function buildMenuItems(
       const items: ScreenItem[] = [
         {
           key: 'new',
-          label: '+ NEW PLAYLIST',
+          label: '+ New playlist',
           activate: () =>
             dispatch({
               type: 'push',
               view: {
                 kind: 'prompt',
-                label: 'NAME',
+                label: 'Name',
                 value: '',
                 intent: { kind: 'newPlaylist', trackIdToAdd: pendingTrackId ?? undefined }
               }
@@ -745,22 +753,22 @@ async function buildMenuItems(
       const actions: ScreenItem[] = [
         {
           key: 'add',
-          label: '+ ADD FOLDER',
+          label: '+ Add folder',
           activate: async () => {
             await window.waverr.library.pickRoot()
           }
         },
         {
           key: 'rescan',
-          label: 'RESCAN ALL',
+          label: 'Rescan all',
           activate: async () => {
             await window.waverr.library.rescan()
           }
         },
         {
           key: 'stats',
-          label: `${stats.trackCount} TRACKS`,
-          meta: stats.missingCount > 0 ? `${stats.missingCount} MISSING` : undefined,
+          label: `${stats.trackCount} tracks`,
+          meta: stats.missingCount > 0 ? `${stats.missingCount} missing` : undefined,
           activate: () => {}
         }
       ]
@@ -769,7 +777,7 @@ async function buildMenuItems(
       if (stats.hiddenCount > 0) {
         actions.push({
           key: 'hidden',
-          label: 'HIDDEN TRACKS',
+          label: 'Hidden tracks',
           meta: String(stats.hiddenCount),
           drillsDown: true,
           activate: () =>
@@ -779,6 +787,17 @@ async function buildMenuItems(
             })
         })
       }
+
+      actions.push({
+        key: 'keybinds',
+        label: 'Keybinds',
+        drillsDown: true,
+        activate: () =>
+          dispatch({
+            type: 'push',
+            view: { kind: 'menu', menu: 'keybindsHelp', selected: 0 }
+          })
+      })
 
       const rootItems: ScreenItem[] = roots.map((root) => ({
         key: `root-${root.id}`,
@@ -793,10 +812,36 @@ async function buildMenuItems(
       return [...actions, ...rootItems]
     }
 
+    case 'keybindsHelp':
+      return KEYBIND_ROWS.map(([label, meta]) => ({
+        key: label,
+        label,
+        meta,
+        activate: () => {}
+      }))
+
     default:
       return []
   }
 }
+
+/** Static reference: every keybind and what it does. Kept in sync by hand
+ *  with `useKeyboardControls` -- there is no way to derive this from the
+ *  handler without parsing it. */
+const KEYBIND_ROWS: [string, string][] = [
+  ['Arrow up / down', 'Move selection'],
+  ['Arrow up / down (now playing)', 'Prev / next track'],
+  ['Page up / down', 'Jump 5'],
+  ['Enter', 'Select / hold for menu'],
+  ['Escape / backspace', 'Back'],
+  ['Space', 'Play / pause'],
+  ['Arrow left / right', 'Prev / next track'],
+  ['Arrow left / right (now playing)', 'Seek 5s'],
+  ['+ / -', 'Volume'],
+  ['V', 'Cycle visualizer'],
+  ['F', 'Toggle favorite'],
+  ['Any letter / number', 'Search']
+]
 
 /**
  * Actions on a row. MOVE and REMOVE only appear where they make sense: in the
@@ -814,7 +859,7 @@ async function buildContextItems(
 
     items.push({
       key: 'play',
-      label: 'PLAY NOW',
+      label: 'Play now',
       activate: async () => {
         dispatch({ type: 'back' })
         // Reuses the row's normal activation (the same one a click or a direct
@@ -826,7 +871,7 @@ async function buildContextItems(
 
     items.push({
       key: 'next',
-      label: 'PLAY NEXT',
+      label: 'Play next',
       activate: async () => {
         const track = await window.waverr.library.getTrack(trackId)
         if (track) audioEngine.enqueueNext(track)
@@ -836,7 +881,7 @@ async function buildContextItems(
 
     items.push({
       key: 'last',
-      label: 'ADD TO QUEUE',
+      label: 'Add to queue',
       activate: async () => {
         const track = await window.waverr.library.getTrack(trackId)
         if (track) audioEngine.enqueue(track)
@@ -846,7 +891,7 @@ async function buildContextItems(
 
     items.push({
       key: 'playlist',
-      label: 'ADD TO PLAYLIST',
+      label: 'Add to playlist',
       drillsDown: true,
       activate: () =>
         dispatch({
@@ -857,7 +902,7 @@ async function buildContextItems(
 
     items.push({
       key: 'favorite',
-      label: 'FAVORITE',
+      label: 'Favorite',
       activate: async () => {
         await window.waverr.library.toggleFavorite(trackId)
         dispatch({ type: 'back' })
@@ -872,7 +917,7 @@ async function buildContextItems(
 
     items.push({
       key: 'play',
-      label: 'PLAY',
+      label: 'Play',
       activate: async () => {
         const entries = await window.waverr.library.listPlaylistTracks(playlistId)
         const playable = entries.filter((entry) => !entry.missing)
@@ -886,14 +931,14 @@ async function buildContextItems(
 
     items.push({
       key: 'rename',
-      label: 'RENAME',
+      label: 'Rename',
       activate: () => {
         dispatch({ type: 'back' })
         dispatch({
           type: 'push',
           view: {
             kind: 'prompt',
-            label: 'NEW NAME',
+            label: 'New name',
             value: '',
             intent: { kind: 'renamePlaylist', playlistId }
           }
@@ -902,7 +947,7 @@ async function buildContextItems(
     })
     items.push({
       key: 'delete',
-      label: 'DELETE PLAYLIST',
+      label: 'Delete playlist',
       activate: async () => {
         await window.waverr.library.deletePlaylist(playlistId)
         dispatch({ type: 'back' })
@@ -913,7 +958,7 @@ async function buildContextItems(
   if (target.origin === 'queue' || target.origin === 'playlist') {
     items.push({
       key: 'move',
-      label: 'MOVE',
+      label: 'Move',
       activate: () => {
         // No `setSelection` is needed here: `openContextMenu` already left the
         // selection of the view underneath on the row that was touched
@@ -938,7 +983,7 @@ async function buildContextItems(
 
     items.push({
       key: 'remove',
-      label: 'REMOVE',
+      label: 'Remove',
       activate: async () => {
         if (target.origin === 'queue') {
           // `target.index` is not used: if the current track ended while the

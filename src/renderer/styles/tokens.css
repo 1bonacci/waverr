@@ -42,7 +42,7 @@
 
   /* Typography */
   --font-lcd: 'Consolas', 'DejaVu Sans Mono', 'Courier New', monospace;
-  --font-ui: 'Segoe UI', system-ui, sans-serif;
+  --font-ui: 'Sora', 'Segoe UI', system-ui, sans-serif;
 
   /* Spacing */
   --gap-xs: 4px;

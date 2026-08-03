@@ -1,9 +1,16 @@
-import type { JSX, MouseEvent, PointerEvent } from 'react'
+import type { JSX, PointerEvent } from 'react'
 import { audioEngine } from '../../audio/AudioEngine'
 import { formatTime, usePlayback } from '../../audio/usePlayback'
 import { displayName } from '../../screen/useScreen'
 import { Visualizer } from '../Visualizer'
 import styles from './NowPlayingView.module.css'
+
+/** Reads where a pointer sits along a horizontal track, as a 0-1 ratio. */
+function ratioAlong(clientX: number, track: HTMLElement): number | null {
+  const bounds = track.getBoundingClientRect()
+  if (bounds.width === 0) return null
+  return Math.max(0, Math.min(1, (clientX - bounds.left) / bounds.width))
+}
 
 /** Playback screen: visualizer on top, details and transport below. */
 export function NowPlayingView(): JSX.Element {
@@ -16,20 +23,34 @@ export function NowPlayingView(): JSX.Element {
   const { track, positionMs, durationMs, volume } = playback
   const progress = durationMs > 0 ? Math.min(1, positionMs / durationMs) : 0
 
-  const seekFromClick = (event: MouseEvent<HTMLDivElement>): void => {
-    const bounds = event.currentTarget.getBoundingClientRect()
-    const ratio = (event.clientX - bounds.left) / bounds.width
-    audioEngine.seek(ratio * durationMs)
+  const seekFrom = (clientX: number, track: HTMLElement): void => {
+    const ratio = ratioAlong(clientX, track)
+    if (ratio !== null) audioEngine.seek(ratio * durationMs)
   }
 
-  // Unlike the progress bar above, the volume track follows the pointer: a
-  // level is something you dial in, so being able to drag to it matters more
-  // than it does for a seek.
+  const seekFromPointer = (event: PointerEvent<HTMLDivElement>): void => {
+    if (event.button !== 0) return
+    const track = event.currentTarget
+    track.setPointerCapture(event.pointerId)
+    seekFrom(event.clientX, track)
+  }
+
+  const seekDrag = (event: PointerEvent<HTMLDivElement>): void => {
+    // With the pointer captured, this fires for the whole drag even when it
+    // leaves the track.
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return
+    seekFrom(event.clientX, event.currentTarget)
+  }
+
+  const endSeekDrag = (event: PointerEvent<HTMLDivElement>): void => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
   const setVolumeFrom = (clientX: number, track: HTMLElement): void => {
-    const bounds = track.getBoundingClientRect()
-    if (bounds.width === 0) return
-    const ratio = (clientX - bounds.left) / bounds.width
-    audioEngine.setVolume(Math.max(0, Math.min(1, ratio)))
+    const ratio = ratioAlong(clientX, track)
+    if (ratio !== null) audioEngine.setVolume(ratio)
   }
 
   const volumeFromPointer = (event: PointerEvent<HTMLDivElement>): void => {
@@ -70,7 +91,14 @@ export function NowPlayingView(): JSX.Element {
         <span className={styles.subtitle}>{subtitle.toUpperCase()}</span>
       </div>
 
-      <div className={styles.progress} onClick={seekFromClick}>
+      <div
+        className={styles.progress}
+        onPointerDown={seekFromPointer}
+        onPointerMove={seekDrag}
+        onPointerUp={endSeekDrag}
+        onPointerCancel={endSeekDrag}
+        data-testid="progress"
+      >
         <div className={styles.progressFill} style={{ width: `${progress * 100}%` }} />
       </div>
 
@@ -111,14 +139,14 @@ export function NowPlayingView(): JSX.Element {
 function statusLabel(status: string): string {
   switch (status) {
     case 'playing':
-      return '▶ PLAY'
+      return '▶ Play'
     case 'paused':
-      return '|| PAUSED'
+      return '|| Paused'
     case 'loading':
-      return 'LOADING'
+      return 'Loading'
     case 'error':
-      return 'ERROR'
+      return 'Error'
     default:
-      return 'STOPPED'
+      return 'Stopped'
   }
 }

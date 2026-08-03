@@ -33,7 +33,10 @@ export const IPC = {
   librarySetSetting: 'library:setSetting',
 
   /** main -> renderer, scan progress */
-  libraryScanProgress: 'library:scanProgress'
+  libraryScanProgress: 'library:scanProgress',
+
+  /** main -> renderer, fires once the window is actually shown on screen */
+  windowShown: 'window:shown'
 } as const
 
 /** Extensions waverr treats as audio. */
@@ -151,6 +154,8 @@ export interface WaverrApi {
   window: {
     minimize(): void
     close(): void
+    /** Fires once the window is actually shown on screen (past `ready-to-show`). */
+    onShown(listener: () => void): () => void
   }
   library: {
     listRoots(): Promise<Root[]>

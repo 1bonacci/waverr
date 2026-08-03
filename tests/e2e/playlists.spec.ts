@@ -70,7 +70,7 @@ test('creating a playlist from the ADD TO PLAYLIST picker returns to the list it
   const rows = page.getByTestId('screen-row')
 
   await page.keyboard.press('Home')
-  await expect(rows.first()).toHaveText(/ALL TRACKS/)
+  await expect(rows.first()).toHaveText(/ALL TRACKS/i)
   await page.keyboard.press('Enter')
 
   await expect(page.getByTestId('screen-title')).toHaveText('ALL TRACKS')

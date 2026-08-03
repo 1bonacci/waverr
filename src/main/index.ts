@@ -46,7 +46,10 @@ function createWindow(): BrowserWindow {
     }
   })
 
-  window.once('ready-to-show', () => window.show())
+  window.once('ready-to-show', () => {
+    window.show()
+    window.webContents.send(IPC.windowShown)
+  })
 
   // Any external link opens in the system browser, never inside the app.
   window.webContents.setWindowOpenHandler(({ url }) => {

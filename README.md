@@ -17,16 +17,19 @@ the keyboard or entirely with the mouse.
 | Key | Action |
 |---|---|
 | `↑` `↓` | move the selection (or scroll the mouse over the wheel) |
+| `↑` `↓` in NOW PLAYING | previous / next track |
 | `Enter` | open / play (confirms the text in a prompt) |
 | `Enter` held | context menu for the row (or right click with the mouse) |
 | `Esc` | back (cancels move mode when a row is held) |
 | `Backspace` | delete a letter in search or in a text prompt; back elsewhere |
 | `Space` | play / pause (types a space inside a text prompt) |
-| `←` `→` | previous / next track (hold: seek 5 s) |
+| `←` `→` | previous / next track |
+| `←` `→` in NOW PLAYING | seek 5 s back / forward |
 | letters and digits | open search and filter live (type the name inside a prompt) |
 | `F` | toggle favorite |
 | `V` | change visualizer mode |
-| `Home` | back to the root menu |
+
+The full list is also in the app: `SETTINGS` -> `KEYBINDS`.
 
 To load music: `SETTINGS` -> `+ ADD FOLDER`. You can add more than one root. The
 scan runs in two passes: paths first (search works within seconds), then tags

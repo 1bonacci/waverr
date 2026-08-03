@@ -476,7 +476,7 @@ function buildOrderBy(sort: TrackQuery['sort'], hasRelevance: boolean): string {
     case 'folder':
       // Groups by containing folder, alphabetical inside each group. Lets one
       // flat list still keep files from the same session together.
-      return 'ORDER BY t.folder COLLATE NOCASE ASC, t.filename COLLATE NOCASE ASC'
+      return 'ORDER BY t.dir COLLATE NOCASE ASC, t.filename COLLATE NOCASE ASC'
     default:
       // bm25 returns negative values: smaller is better. The weights make a
       // match in the filename beat one in the path.
